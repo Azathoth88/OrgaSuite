@@ -1,3 +1,4 @@
+// backend/server.js - VEREINFACHT mit automatischer Migration
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -16,7 +17,30 @@ app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database Connection
+// ✅ EINFACHE AUTO-MIGRATION FUNCTION
+async function runSimpleMigration() {
+  try {
+    console.log('🔄 Führe Datenbank-Migration aus...');
+    
+    // SQL direkt ausführen - fügt bank_details Spalte hinzu falls nicht vorhanden
+    await sequelize.query(`
+      ALTER TABLE organizations 
+      ADD COLUMN IF NOT EXISTS bank_details JSONB DEFAULT '{}';
+    `);
+    
+    console.log('✅ Migration: bank_details Spalte verfügbar');
+    
+  } catch (error) {
+    // Ignoriere Fehler falls Spalte bereits existiert
+    if (error.message.includes('already exists')) {
+      console.log('✅ Migration: bank_details Spalte existiert bereits');
+    } else {
+      console.error('❌ Migration-Fehler:', error.message);
+    }
+  }
+}
+
+// Database Connection mit Migration
 sequelize.authenticate()
   .then(() => {
     console.log('✅ PostgreSQL connected successfully');
@@ -24,11 +48,18 @@ sequelize.authenticate()
   })
   .then(() => {
     console.log('✅ Database synchronized');
+    return runSimpleMigration(); // ✅ Migration ausführen
+  })
+  .then(() => {
+    console.log('✅ Migrations completed');
   })
   .catch(err => {
     console.error('❌ Database connection error:', err);
     process.exit(1);
   });
+
+// ==================== REST OF YOUR API CODE ====================
+// (Hier kommt der Rest Ihrer bestehenden server.js - health check, endpoints etc.)
 
 // ==================== HEALTH CHECK ====================
 app.get('/api/health', (req, res) => {
@@ -110,7 +141,7 @@ app.post('/api/organization', async (req, res) => {
         type,
         taxNumber,
         address,
-        bankDetails, // Bank details support
+        bankDetails, // ✅ Bank details support
         settings: settings || organization.settings
       });
       
@@ -122,7 +153,7 @@ app.post('/api/organization', async (req, res) => {
         type,
         taxNumber,
         address,
-        bankDetails, // Bank details support
+        bankDetails, // ✅ Bank details support
         settings: settings || {}
       });
       
