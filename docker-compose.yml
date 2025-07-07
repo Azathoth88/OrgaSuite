@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (mit Healthcheck)
   postgres:
     image: postgres:15
     container_name: orgasuite-db
@@ -15,10 +15,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orgasuite_user -d orgasuite"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - orgasuite-network
 
-  # Backend API
+  # Backend API (wartet auf gesunde DB)
   backend:
     build: ./backend
     container_name: orgasuite-api
@@ -31,7 +36,8 @@ services:
       DATABASE_URL: postgres://orgasuite_user:orgasuite_password@postgres:5432/orgasuite
       JWT_SECRET: orgasuite-super-secret-key-change-in-production
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - /app/node_modules

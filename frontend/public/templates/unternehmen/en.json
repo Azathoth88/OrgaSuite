@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "orgType": "unternehmen",
+    "displayName": "Company"
+  },
+  "members": {
+    "single": "Customer",
+    "plural": "Customers",
+    "newMember": "New Customer",
+    "addMember": "Add Customer",
+    "editMember": "Edit Customer",
+    "memberNumber": "Customer Number",
+    "memberSince": "Customer since",
+    "membershipFee": "Invoice",
+    "status": {
+      "active": "Active Customer",
+      "inactive": "Inactive Customer",
+      "suspended": "Blocked Customer"
+    }
+  },
+  "dashboard": {
+    "title": "Company Dashboard",
+    "subtitle": "Customer Management",
+    "stats": {
+      "totalMembers": "Total Customers",
+      "activeMembers": "Active Customers",
+      "pendingFees": "Outstanding Invoices"
+    }
+  },
+  "actions": {
+    "create": "Create",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "status": "Status"
+  }
+}

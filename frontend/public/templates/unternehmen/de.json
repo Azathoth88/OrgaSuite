@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "orgType": "unternehmen",
+    "displayName": "Unternehmen"
+  },
+  "members": {
+    "single": "Kunde",
+    "plural": "Kunden",
+    "newMember": "Neuer Kunde",
+    "addMember": "Kunde hinzufügen",
+    "editMember": "Kunde bearbeiten",
+    "memberNumber": "Kundennummer",
+    "memberSince": "Kunde seit",
+    "membershipFee": "Rechnung",
+    "status": {
+      "active": "Aktiver Kunde",
+      "inactive": "Inaktiver Kunde",
+      "suspended": "Gesperrter Kunde"
+    }
+  },
+  "dashboard": {
+    "title": "Unternehmens-Dashboard",
+    "subtitle": "Kundenmanagement",
+    "stats": {
+      "totalMembers": "Kunden gesamt",
+      "activeMembers": "Aktive Kunden",
+      "pendingFees": "Offene Rechnungen"
+    }
+  },
+  "actions": {
+    "create": "Erstellen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  },
+  "common": {
+    "loading": "Lädt...",
+    "error": "Fehler",
+    "success": "Erfolgreich",
+    "name": "Name",
+    "email": "E-Mail",
+    "phone": "Telefon",
+    "status": "Status"
+  }
+}
