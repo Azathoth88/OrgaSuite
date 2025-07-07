@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database (mit Healthcheck)
+  # PostgreSQL Database
   postgres:
     image: postgres:15
     container_name: orgasuite-db
@@ -12,20 +12,24 @@ services:
       POSTGRES_DB: orgasuite
       POSTGRES_USER: orgasuite_user
       POSTGRES_PASSWORD: orgasuite_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orgasuite_user -d orgasuite"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U orgasuite_user -d orgasuite -h localhost -p 5432"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     networks:
       - orgasuite-network
 
-  # Backend API (wartet auf gesunde DB)
+  # Backend API - Mit erweiterten CORS und Network-Einstellungen
   backend:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: orgasuite-api
     restart: unless-stopped
     ports:
@@ -35,42 +39,71 @@ services:
       PORT: 5000
       DATABASE_URL: postgres://orgasuite_user:orgasuite_password@postgres:5432/orgasuite
       JWT_SECRET: orgasuite-super-secret-key-change-in-production
+      # ✅ CORS für LAN-Zugriff erweitern
+      CORS_ORIGIN: "*"
+      # ✅ Bind auf alle Interfaces
+      HOST: "0.0.0.0"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
       - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - orgasuite-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Frontend React App
+  # Frontend React App - Mit dynamischer API URL
   frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: orgasuite-web
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      REACT_APP_API_URL: http://localhost:5000/api
+      # ✅ WICHTIG: Ersetzen Sie 192.168.1.100 mit der tatsächlichen IP Ihres Docker-Host-PCs
+      # Um Ihre IP zu finden: ip addr show | grep inet | grep -v 127.0.0.1
+      REACT_APP_API_URL: http://192.168.1.10:5000/api
+      GENERATE_SOURCEMAP: "false"
+      # ✅ React auf allen Interfaces starten
+      HOST: "0.0.0.0"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - /app/build
     networks:
       - orgasuite-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # pgAdmin (Database Management)
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: orgasuite-pgadmin
+  # Adminer als alternative Datenbank-UI
+  adminer:
+    image: adminer:latest
+    container_name: orgasuite-adminer
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8081:8080"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@orgasuite.de
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
     depends_on:
       - postgres
     networks:
@@ -78,7 +111,13 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
 
 networks:
   orgasuite-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
