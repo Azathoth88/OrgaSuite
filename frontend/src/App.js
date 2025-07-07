@@ -5,10 +5,11 @@ import LanguageSwitcher from './components/LanguageSwitcher';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/views/DashboardView';
 import OrganizationView from './components/views/OrganizationView';
+import OrganizationSetup from './components/OrganizationSetup'; // Import hinzugefügt
 import './i18n'; // Initialize i18n
 
 function AppContent() {
-  const { organization, loading: orgLoading } = useContext(OrganizationContext);
+  const { organization, loading: orgLoading, setupRequired } = useContext(OrganizationContext); // setupRequired hinzugefügt
   const { t, ready } = useOrgTranslation();
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -27,15 +28,9 @@ function AppContent() {
     );
   }
 
-  if (!organization) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-800">🏢 OrgaSuite</h1>
-          <p className="text-gray-600 mt-2">Keine Organisation gefunden</p>
-        </div>
-      </div>
-    );
+  // Show setup if required
+  if (setupRequired || !organization) {
+    return <OrganizationSetup />;
   }
 
   // Render different views based on activeView
