@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
+import { useIBANValidation, formatIBAN } from '../../utils/ibanUtils';
 
 const OrganizationView = () => {
   const { organization, saveOrganization } = useContext(OrganizationContext);
@@ -8,46 +9,38 @@ const OrganizationView = () => {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState(organization || {});
-  const [ibanError, setIbanError] = useState('');
 
-  // IBAN Validation
-  const validateIban = (iban) => {
-    if (!iban) return true; // Optional field
-    
-    const cleanIban = iban.replace(/\s/g, '').toUpperCase();
-    
-    // Basic length check
-    if (cleanIban.length < 15 || cleanIban.length > 34) {
-      return false;
-    }
-    
-    // Basic format check (starts with 2 letters, then numbers)
-    const ibanRegex = /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/;
-    return ibanRegex.test(cleanIban);
-  };
-
-  const handleIbanChange = (iban) => {
-    setFormData({
-      ...formData,
-      bankDetails: { ...(formData.bankDetails || {}), iban }
-    });
-    
-    if (iban && !validateIban(iban)) {
-      setIbanError(t('organization.bank.invalidIban', 'Ungültiges IBAN-Format'));
-    } else {
-      setIbanError('');
-    }
-  };
+  // IBAN-Validierung Hook
+  const {
+    iban,
+    validation: ibanValidation,
+    handleIbanChange,
+    isValid: isIbanValid,
+    error: ibanError,
+    formatted: ibanFormatted,
+    countryCode: ibanCountryCode,
+    bankCode: ibanBankCode
+  } = useIBANValidation(formData.bankDetails?.iban || '');
 
   const handleSave = async () => {
-    // Validate IBAN before saving
-    if (formData.bankDetails?.iban && !validateIban(formData.bankDetails.iban)) {
-      alert(t('organization.bank.invalidIban', 'Ungültiges IBAN-Format'));
+    // IBAN-Validierung vor dem Speichern
+    if (iban && !isIbanValid) {
+      alert(ibanError || t('organization.bank.invalidIban', 'Ungültiges IBAN-Format'));
       return;
     }
 
     setLoading(true);
-    const success = await saveOrganization(formData);
+    
+    // Bankdaten mit validierter IBAN aktualisieren
+    const updatedFormData = {
+      ...formData,
+      bankDetails: {
+        ...(formData.bankDetails || {}),
+        iban: iban || ''
+      }
+    };
+
+    const success = await saveOrganization(updatedFormData);
     
     if (success) {
       setEditing(false);
@@ -61,8 +54,17 @@ const OrganizationView = () => {
 
   const handleCancel = () => {
     setFormData(organization || {});
+    handleIbanChange(organization?.bankDetails?.iban || '');
     setEditing(false);
-    setIbanError('');
+  };
+
+  // IBAN Input Handler
+  const handleIbanInputChange = (value) => {
+    handleIbanChange(value);
+    setFormData({
+      ...formData,
+      bankDetails: { ...(formData.bankDetails || {}), iban: value }
+    });
   };
 
   if (!organization) {
@@ -112,7 +114,7 @@ const OrganizationView = () => {
               </button>
               <button
                 onClick={handleSave}
-                disabled={loading || ibanError}
+                disabled={loading || (iban && !isIbanValid)}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
               >
                 {loading ? t('common.saving', 'Speichere...') : t('actions.save', 'Speichern')}
@@ -310,7 +312,7 @@ const OrganizationView = () => {
           </div>
         </div>
 
-        {/* Bank Details Card */}
+        {/* Bank Details Card mit verbesserter IBAN-Validierung */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-6 flex items-center">
@@ -341,31 +343,87 @@ const OrganizationView = () => {
                   )}
                 </div>
 
+                {/* VERBESSERTE IBAN-EINGABE */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('organization.bank.iban', 'IBAN')}
+                    {ibanCountryCode && (
+                      <span className="ml-2 text-xs text-blue-600">
+                        ({ibanCountryCode}
+                        {ibanBankCode && ` - BLZ: ${ibanBankCode}`})
+                      </span>
+                    )}
                   </label>
                   {editing ? (
                     <div>
                       <input
                         type="text"
-                        value={formData.bankDetails?.iban || ''}
-                        onChange={(e) => handleIbanChange(e.target.value)}
-                        className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                          ibanError ? 'border-red-300' : 'border-gray-300'
+                        value={iban}
+                        onChange={(e) => handleIbanInputChange(e.target.value)}
+                        className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono ${
+                          iban && !isIbanValid ? 'border-red-300 bg-red-50' : 
+                          iban && isIbanValid ? 'border-green-300 bg-green-50' : 
+                          'border-gray-300'
                         }`}
                         placeholder="DE89 3704 0044 0532 0130 00"
                       />
-                      {ibanError && (
-                        <p className="text-red-600 text-xs mt-1">{ibanError}</p>
+                      
+                      {/* IBAN-Validierung Feedback */}
+                      {iban && (
+                        <div className="mt-2">
+                          {isIbanValid ? (
+                            <div className="flex items-center text-green-700 text-sm">
+                              <span className="mr-2">✅</span>
+                              <span>
+                                IBAN ist gültig 
+                                {ibanCountryCode && ` (${ibanCountryCode})`}
+                                {ibanBankCode && ` - BLZ: ${ibanBankCode}`}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-start text-red-700 text-sm">
+                              <span className="mr-2 mt-0.5">❌</span>
+                              <div>
+                                <div className="font-medium">IBAN-Validierung fehlgeschlagen:</div>
+                                <div className="mt-1">{ibanError}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Formatierte IBAN Vorschau */}
+                      {iban && isIbanValid && ibanFormatted && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                          <span className="text-blue-700 font-medium">Formatierte IBAN:</span>
+                          <div className="font-mono text-blue-800 mt-1">{ibanFormatted}</div>
+                        </div>
                       )}
                     </div>
                   ) : (
-                    <div className="p-3 bg-gray-50 rounded-lg font-mono">
-                      {organization.bankDetails?.iban ? 
-                        organization.bankDetails.iban.replace(/(.{4})/g, '$1 ').trim() :
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      {organization.bankDetails?.iban ? (
+                        <div>
+                          <div className="font-mono">
+                            {formatIBAN(organization.bankDetails.iban)}
+                          </div>
+                          {organization.bankDetails?.iban && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {(() => {
+                                const validation = ibanValidation;
+                                return validation.countryCode ? (
+                                  <>
+                                    Land: {validation.countryCode}
+                                    {validation.bankCode && ` | BLZ: ${validation.bankCode}`}
+                                  </>
+                                ) : null;
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                         t('organization.bank.notSpecified', 'Nicht angegeben')
-                      }
+                      )}
                     </div>
                   )}
                 </div>
@@ -384,7 +442,7 @@ const OrganizationView = () => {
                         ...formData,
                         bankDetails: { ...(formData.bankDetails || {}), bic: e.target.value.toUpperCase() }
                       })}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
                       placeholder="COBADEFFXXX"
                     />
                   ) : (

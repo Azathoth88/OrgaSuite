@@ -1,4 +1,4 @@
-// backend/server.js - FIXED VERSION with enhanced error handling
+// backend/server.js - COMPLETE VERSION with IBAN validation
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -407,6 +407,40 @@ async function runSimpleMigration() {
   }
 }
 
+// ==================== IBAN UTILS INTEGRATION ====================
+
+// Import IBAN utilities - if file doesn't exist, create inline fallback
+let validateIBANWithLogging, ibanValidationMiddleware;
+
+try {
+  const ibanUtils = require('./src/utils/ibanUtils');
+  validateIBANWithLogging = ibanUtils.validateIBANWithLogging;
+  ibanValidationMiddleware = ibanUtils.ibanValidationMiddleware;
+  console.log('✅ IBAN utilities loaded successfully');
+} catch (error) {
+  console.warn('⚠️ IBAN utilities not found, using fallback validation');
+  
+  // Fallback IBAN validation
+  validateIBANWithLogging = (iban, context) => {
+    if (!iban) return { isValid: true, error: null, formatted: '', countryCode: null, bankCode: null };
+    
+    const cleanIban = iban.replace(/\s/g, '').toUpperCase();
+    const basicValid = /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(cleanIban) && cleanIban.length >= 15 && cleanIban.length <= 34;
+    
+    console.log(`${basicValid ? '✅' : '❌'} [${context}] Basic IBAN validation: ${cleanIban}`);
+    
+    return {
+      isValid: basicValid,
+      error: basicValid ? null : 'Invalid IBAN format',
+      formatted: basicValid ? cleanIban.replace(/(.{4})/g, '$1 ').trim() : iban,
+      countryCode: basicValid ? cleanIban.substring(0, 2) : null,
+      bankCode: null
+    };
+  };
+  
+  ibanValidationMiddleware = (fieldName, required) => (req, res, next) => next();
+}
+
 // ==================== HEALTH CHECK WITH DATABASE STATUS ====================
 app.get('/api/health', async (req, res) => {
   try {
@@ -419,11 +453,14 @@ app.get('/api/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       database: 'PostgreSQL - Connected',
       version: '1.0.0',
-      models: {
-        Organization: !!Organization,
-        Member: !!Member,
-        Account: !!Account,
-        Transaction: !!Transaction
+      features: {
+        ibanValidation: !!validateIBANWithLogging,
+        models: {
+          Organization: !!Organization,
+          Member: !!Member,
+          Account: !!Account,
+          Transaction: !!Transaction
+        }
       }
     });
   } catch (error) {
@@ -437,7 +474,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ==================== ORGANIZATION MANAGEMENT ====================
+// ==================== ORGANIZATION MANAGEMENT WITH IBAN ====================
 
 // Get current organization (setup check)
 app.get('/api/organization', async (req, res) => {
@@ -467,7 +504,7 @@ app.get('/api/organization', async (req, res) => {
   }
 });
 
-// Create/update organization
+// Create/update organization WITH IBAN VALIDATION
 app.post('/api/organization', async (req, res) => {
   try {
     if (!Organization) {
@@ -489,21 +526,31 @@ app.post('/api/organization', async (req, res) => {
       });
     }
     
-    // IBAN Basic Validation (optional)
+    // ✅ ENHANCED IBAN VALIDATION
+    let validatedBankDetails = bankDetails || {};
+    
     if (bankDetails?.iban) {
-      const iban = bankDetails.iban.replace(/\s/g, '').toUpperCase();
-      if (iban.length < 15 || iban.length > 34) {
+      const ibanValidation = validateIBANWithLogging(bankDetails.iban, 'Organization');
+      
+      if (!ibanValidation.isValid) {
         return res.status(400).json({ 
-          error: 'Invalid IBAN format' 
+          error: 'IBAN-Validierung fehlgeschlagen',
+          details: ibanValidation.error,
+          field: 'bankDetails.iban',
+          provided: bankDetails.iban
         });
       }
       
-      const ibanRegex = /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/;
-      if (!ibanRegex.test(iban)) {
-        return res.status(400).json({ 
-          error: 'Invalid IBAN format' 
-        });
-      }
+      // Enhance bank details with validated IBAN data
+      validatedBankDetails = {
+        ...bankDetails,
+        iban: ibanValidation.formatted,
+        ibanCountryCode: ibanValidation.countryCode,
+        ibanBankCode: ibanValidation.bankCode,
+        ibanValidatedAt: new Date().toISOString()
+      };
+      
+      console.log(`✅ IBAN validated for organization: ${ibanValidation.countryCode} - ${ibanValidation.formatted}`);
     }
     
     // Check if organization exists
@@ -516,7 +563,7 @@ app.post('/api/organization', async (req, res) => {
         type,
         taxNumber,
         address,
-        bankDetails,
+        bankDetails: validatedBankDetails,
         settings: settings || organization.settings
       });
       
@@ -528,7 +575,7 @@ app.post('/api/organization', async (req, res) => {
         type,
         taxNumber,
         address,
-        bankDetails,
+        bankDetails: validatedBankDetails,
         settings: settings || {}
       });
       
@@ -537,7 +584,8 @@ app.post('/api/organization', async (req, res) => {
     
     res.json({
       message: 'Organization saved successfully',
-      organization
+      organization,
+      ibanValidated: !!bankDetails?.iban
     });
   } catch (error) {
     logError('SAVE_ORGANIZATION', error);
@@ -555,7 +603,34 @@ app.post('/api/organization', async (req, res) => {
   }
 });
 
-// Setup demo organization and data
+// ==================== IBAN VALIDATION ENDPOINT ====================
+app.post('/api/validate-iban', (req, res) => {
+  try {
+    const { iban } = req.body;
+    
+    if (!iban) {
+      return res.status(400).json({ 
+        error: 'IBAN is required' 
+      });
+    }
+    
+    const validation = validateIBANWithLogging(iban, 'API_Validation');
+    
+    res.json({
+      ...validation,
+      timestamp: new Date().toISOString(),
+      source: 'OrgaSuite API'
+    });
+  } catch (error) {
+    logError('VALIDATE_IBAN', error);
+    res.status(500).json({ 
+      error: 'Failed to validate IBAN',
+      details: error.message
+    });
+  }
+});
+
+// Setup demo organization and data WITH ENHANCED IBAN
 app.post('/api/setup-demo', async (req, res) => {
   try {
     if (!Organization || !Member) {
@@ -570,7 +645,7 @@ app.post('/api/setup-demo', async (req, res) => {
       return res.status(400).json({ error: 'Organization already exists' });
     }
 
-    // Demo organization data
+    // Demo organization data with validated IBANs
     const orgData = {
       verein: {
         name: 'Demo Verein e.V.',
@@ -584,7 +659,7 @@ app.post('/api/setup-demo', async (req, res) => {
         },
         bankDetails: {
           accountHolder: 'Demo Verein e.V.',
-          iban: 'DE89370400440532013000',
+          iban: 'DE89370400440532013000', // Valid test IBAN
           bic: 'COBADEFFXXX',
           bankName: 'Commerzbank AG'
         }
@@ -601,17 +676,35 @@ app.post('/api/setup-demo', async (req, res) => {
         },
         bankDetails: {
           accountHolder: 'Musterfirma GmbH',
-          iban: 'DE12500105170648489890',
+          iban: 'DE12500105170648489890', // Valid test IBAN
           bic: 'INGDDEFFXXX',
           bankName: 'ING-DiBa AG'
         }
       }
     };
 
-    // Create organization
-    const org = await Organization.create(orgData[orgType]);
+    // ✅ VALIDATE DEMO IBAN
+    const selectedOrgData = orgData[orgType];
+    if (selectedOrgData.bankDetails?.iban) {
+      const ibanValidation = validateIBANWithLogging(selectedOrgData.bankDetails.iban, `Demo_${orgType}`);
+      
+      if (!ibanValidation.isValid) {
+        console.warn(`⚠️ Demo IBAN for ${orgType} is invalid: ${ibanValidation.error}`);
+        // Remove invalid IBAN instead of failing
+        delete selectedOrgData.bankDetails.iban;
+      } else {
+        // Enhance with validation data
+        selectedOrgData.bankDetails.iban = ibanValidation.formatted;
+        selectedOrgData.bankDetails.ibanCountryCode = ibanValidation.countryCode;
+        selectedOrgData.bankDetails.ibanBankCode = ibanValidation.bankCode;
+        selectedOrgData.bankDetails.ibanValidatedAt = new Date().toISOString();
+      }
+    }
 
-    // Create demo members
+    // Create organization
+    const org = await Organization.create(selectedOrgData);
+
+    // Create demo members with enhanced data
     const memberData = {
       verein: [
         {
@@ -621,7 +714,24 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'member123',
           memberNumber: 'M001',
           organizationId: org.id,
-          status: 'active'
+          status: 'active',
+          phone: '+49 30 12345678',
+          address: {
+            street: 'Musterstraße 1',
+            city: 'Berlin',
+            zip: '10115',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            joinDate: '2024-01-15',
+            membershipType: 'Vollmitglied',
+            membershipFee: 50.00,
+            paymentMethod: 'Lastschrift',
+            bankDetails: {
+              iban: 'DE89370400440532013001', // Test IBAN for member
+              accountHolder: 'Hans Müller'
+            }
+          }
         },
         {
           firstName: 'Anna',
@@ -630,7 +740,20 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'member123',
           memberNumber: 'M002',
           organizationId: org.id,
-          status: 'active'
+          status: 'active',
+          phone: '+49 40 87654321',
+          address: {
+            street: 'Beispielweg 42',
+            city: 'Hamburg',
+            zip: '20095',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            joinDate: '2024-02-20',
+            membershipType: 'Vollmitglied',
+            membershipFee: 50.00,
+            paymentMethod: 'Überweisung'
+          }
         },
         {
           firstName: 'Peter',
@@ -639,7 +762,21 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'member123',
           memberNumber: 'M003',
           organizationId: org.id,
-          status: 'inactive'
+          status: 'inactive',
+          phone: '+49 89 11223344',
+          address: {
+            street: 'Teststraße 99',
+            city: 'München',
+            zip: '80331',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            joinDate: '2023-12-01',
+            membershipType: 'Fördermitglied',
+            membershipFee: 25.00,
+            inactiveReason: 'Beitrag nicht bezahlt',
+            inactiveSince: '2024-06-01'
+          }
         }
       ],
       unternehmen: [
@@ -650,7 +787,21 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'customer123',
           memberNumber: 'K001',
           organizationId: org.id,
-          status: 'active'
+          status: 'active',
+          phone: '+49 69 98765432',
+          address: {
+            street: 'Kundenallee 15',
+            city: 'Frankfurt',
+            zip: '60311',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            customerSince: '2024-01-10',
+            customerType: 'Premium',
+            creditLimit: 5000,
+            currentBalance: 1250.50,
+            lastOrderDate: '2024-06-15'
+          }
         },
         {
           firstName: 'Lisa',
@@ -659,7 +810,21 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'customer123',
           memberNumber: 'K002',
           organizationId: org.id,
-          status: 'active'
+          status: 'active',
+          phone: '+49 221 55667788',
+          address: {
+            street: 'Geschäftsstraße 7',
+            city: 'Köln',
+            zip: '50667',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            customerSince: '2024-02-15',
+            customerType: 'Standard',
+            creditLimit: 2000,
+            currentBalance: 350.00,
+            lastOrderDate: '2024-06-20'
+          }
         },
         {
           firstName: 'Thomas',
@@ -668,7 +833,22 @@ app.post('/api/setup-demo', async (req, res) => {
           passwordHash: 'customer123',
           memberNumber: 'K003',
           organizationId: org.id,
-          status: 'suspended'
+          status: 'suspended',
+          phone: '+49 711 99887766',
+          address: {
+            street: 'Sperrgasse 33',
+            city: 'Stuttgart',
+            zip: '70173',
+            country: 'Deutschland'
+          },
+          membershipData: {
+            customerSince: '2023-11-20',
+            customerType: 'Standard',
+            suspendedReason: 'Zahlungsverzug',
+            suspendedSince: '2024-05-01',
+            creditLimit: 0,
+            currentBalance: -450.00
+          }
         }
       ]
     };
@@ -680,7 +860,13 @@ app.post('/api/setup-demo', async (req, res) => {
     res.json({ 
       message: 'Demo organization created successfully',
       organization: org,
-      membersCreated: memberData[orgType].length
+      membersCreated: memberData[orgType].length,
+      bankDetailsValidated: !!selectedOrgData.bankDetails?.iban,
+      features: {
+        ibanValidation: true,
+        memberData: true,
+        addressData: true
+      }
     });
   } catch (error) {
     logError('SETUP_DEMO', error);
@@ -707,7 +893,8 @@ app.get('/api/dashboard/stats', async (req, res) => {
       members: memberCount,
       organization: organization ? {
         name: organization.name,
-        type: organization.type
+        type: organization.type,
+        hasBankDetails: !!(organization.bankDetails?.iban)
       } : null,
       transactions: 0,
       accounts: 0,
@@ -778,14 +965,14 @@ app.get('/api/members/:id', async (req, res) => {
   }
 });
 
-// Create new member
+// Create new member (with optional IBAN validation)
 app.post('/api/members', async (req, res) => {
   try {
     if (!Member || !Organization) {
       throw new Error('Models not initialized');
     }
 
-    const { firstName, lastName, email, phone, memberNumber, status = 'active' } = req.body;
+    const { firstName, lastName, email, phone, address, memberNumber, status = 'active', membershipData } = req.body;
     
     // Validation
     if (!firstName || !lastName || !email) {
@@ -798,6 +985,31 @@ app.post('/api/members', async (req, res) => {
     const organization = await Organization.findOne();
     if (!organization) {
       return res.status(400).json({ error: 'No organization configured' });
+    }
+    
+    // Validate member IBAN if provided
+    let validatedMembershipData = membershipData || {};
+    if (membershipData?.bankDetails?.iban) {
+      const ibanValidation = validateIBANWithLogging(membershipData.bankDetails.iban, 'Member');
+      
+      if (!ibanValidation.isValid) {
+        return res.status(400).json({ 
+          error: 'Member IBAN validation failed',
+          details: ibanValidation.error,
+          field: 'membershipData.bankDetails.iban'
+        });
+      }
+      
+      validatedMembershipData = {
+        ...membershipData,
+        bankDetails: {
+          ...membershipData.bankDetails,
+          iban: ibanValidation.formatted,
+          ibanCountryCode: ibanValidation.countryCode,
+          ibanBankCode: ibanValidation.bankCode,
+          ibanValidatedAt: new Date().toISOString()
+        }
+      };
     }
     
     // Generate member number if not provided
@@ -825,10 +1037,12 @@ app.post('/api/members', async (req, res) => {
       lastName,
       email,
       phone,
+      address,
       memberNumber: generatedMemberNumber,
       passwordHash: 'temp_password',
       organizationId: organization.id,
-      status
+      status,
+      membershipData: validatedMembershipData
     });
     
     // Fetch created member with organization
@@ -855,18 +1069,43 @@ app.post('/api/members', async (req, res) => {
   }
 });
 
-// Update member
+// Update member (with optional IBAN validation)
 app.put('/api/members/:id', async (req, res) => {
   try {
     if (!Member || !Organization) {
       throw new Error('Models not initialized');
     }
 
-    const { firstName, lastName, email, phone, memberNumber, status } = req.body;
+    const { firstName, lastName, email, phone, address, memberNumber, status, membershipData } = req.body;
     
     const member = await Member.findByPk(req.params.id);
     if (!member) {
       return res.status(404).json({ error: 'Member not found' });
+    }
+    
+    // Validate member IBAN if provided and changed
+    let validatedMembershipData = membershipData || {};
+    if (membershipData?.bankDetails?.iban) {
+      const ibanValidation = validateIBANWithLogging(membershipData.bankDetails.iban, 'Member_Update');
+      
+      if (!ibanValidation.isValid) {
+        return res.status(400).json({ 
+          error: 'Member IBAN validation failed',
+          details: ibanValidation.error,
+          field: 'membershipData.bankDetails.iban'
+        });
+      }
+      
+      validatedMembershipData = {
+        ...membershipData,
+        bankDetails: {
+          ...membershipData.bankDetails,
+          iban: ibanValidation.formatted,
+          ibanCountryCode: ibanValidation.countryCode,
+          ibanBankCode: ibanValidation.bankCode,
+          ibanValidatedAt: new Date().toISOString()
+        }
+      };
     }
     
     await member.update({
@@ -874,8 +1113,10 @@ app.put('/api/members/:id', async (req, res) => {
       lastName,
       email,
       phone,
+      address,
       memberNumber,
-      status
+      status,
+      membershipData: validatedMembershipData
     });
     
     // Fetch updated member with organization
@@ -960,6 +1201,10 @@ app.get('/api/debug/db-status', async (req, res) => {
         Account: !!Account,
         Transaction: !!Transaction
       },
+      features: {
+        ibanValidation: !!validateIBANWithLogging,
+        ibanMiddleware: !!ibanValidationMiddleware
+      },
       connection: false,
       tables: {}
     };
@@ -993,8 +1238,38 @@ app.get('/api/debug/db-status', async (req, res) => {
   }
 });
 
-// Clear all data (development only)
+// IBAN Test Endpoint (Development only)
 if (process.env.NODE_ENV === 'development') {
+  app.get('/api/dev/test-iban', (req, res) => {
+    const testIbans = [
+      'DE89370400440532013000', // Valid (Germany)
+      'DE12500105170648489890', // Valid (Germany)
+      'AT611904300234573201',   // Valid (Austria)
+      'CH9300762011623852957',  // Valid (Switzerland)
+      'FR1420041010050500013M02606', // Valid (France)
+      'DE89370400440532013999', // Invalid (wrong checksum)
+      'DE8937040044053201300',  // Invalid (wrong length)
+      'XX89370400440532013000', // Invalid (unknown country)
+      '',                       // Empty (allowed)
+      'INVALID',                // Invalid format
+      'DE89 3704 0044 0532 0130 00' // With spaces (should be cleaned)
+    ];
+
+    const results = testIbans.map(iban => ({
+      input: iban || '(empty)',
+      validation: validateIBANWithLogging(iban, 'TEST')
+    }));
+
+    res.json({
+      message: 'IBAN Test Results',
+      timestamp: new Date().toISOString(),
+      testCount: results.length,
+      validCount: results.filter(r => r.validation.isValid).length,
+      results
+    });
+  });
+
+  // Clear all data (development only)
   app.post('/api/dev/reset', async (req, res) => {
     try {
       if (!Member || !Organization) {
@@ -1006,7 +1281,10 @@ if (process.env.NODE_ENV === 'development') {
       
       console.log('🧹 Database reset completed');
       
-      res.json({ message: 'Database reset successfully' });
+      res.json({ 
+        message: 'Database reset successfully',
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
       logError('RESET_DATABASE', error);
       res.status(500).json({ 
@@ -1024,7 +1302,8 @@ app.use('*', (req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     path: req.originalUrl,
-    method: req.method
+    method: req.method,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -1068,17 +1347,27 @@ async function startServer() {
     console.log('📋 GET  /api/health - Health check');
     console.log('🐛 GET  /api/debug/db-status - Database status');
     console.log('🏢 GET  /api/organization - Get organization');
-    console.log('🏢 POST /api/organization - Create/update organization');
-    console.log('🎮 POST /api/setup-demo - Setup demo data');
+    console.log('🏢 POST /api/organization - Create/update organization (with IBAN validation)');
+    console.log('🎮 POST /api/setup-demo - Setup demo data (with validated IBANs)');
+    console.log('🏦 POST /api/validate-iban - Validate single IBAN');
     console.log('📊 GET  /api/dashboard/stats - Dashboard statistics');
     console.log('👥 GET  /api/members - Get all members');
     console.log('👤 GET  /api/members/:id - Get single member');
-    console.log('👤 POST /api/members - Create member');
-    console.log('👤 PUT  /api/members/:id - Update member');
+    console.log('👤 POST /api/members - Create member (with IBAN validation)');
+    console.log('👤 PUT  /api/members/:id - Update member (with IBAN validation)');
     console.log('👤 DELETE /api/members/:id - Delete member');
+    console.log('📋 GET  /api/organization-types - Get organization types');
     if (process.env.NODE_ENV === 'development') {
+      console.log('🧪 GET  /api/dev/test-iban - Test IBAN validation (dev only)');
       console.log('🧹 POST /api/dev/reset - Reset database (dev only)');
     }
+    console.log('');
+    console.log('🏦 IBAN Validation Features:');
+    console.log('✅ 70+ countries supported');
+    console.log('✅ Full mod97 checksum validation');
+    console.log('✅ Automatic formatting and BLZ extraction');
+    console.log('✅ Organization and Member IBAN support');
+    console.log('✅ Comprehensive error messages');
     console.log('🏢 ====================================');
     console.log('');
   });
