@@ -5,11 +5,12 @@ import LanguageSwitcher from './components/LanguageSwitcher';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/views/DashboardView';
 import OrganizationView from './components/views/OrganizationView';
-import OrganizationSetup from './components/OrganizationSetup'; // Import hinzugefügt
+import MembersView from './components/views/MembersView'; // ✅ Import der neuen MembersView
+import OrganizationSetup from './components/OrganizationSetup';
 import './i18n'; // Initialize i18n
 
 function AppContent() {
-  const { organization, loading: orgLoading, setupRequired } = useContext(OrganizationContext); // setupRequired hinzugefügt
+  const { organization, loading: orgLoading, setupRequired } = useContext(OrganizationContext);
   const { t, ready } = useOrgTranslation();
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -41,14 +42,7 @@ function AppContent() {
       case 'organization':
         return <OrganizationView />;
       case 'members':
-        return (
-          <div className="p-6">
-            <h1 className="text-2xl font-bold">👥 {t('members.plural')}</h1>
-            <p className="text-gray-600 mt-2">
-              {t('members.comingSoon', 'Mitgliederverwaltung wird bald verfügbar sein...')}
-            </p>
-          </div>
-        );
+        return <MembersView />; // ✅ Neue MembersView anstatt Platzhalter
       case 'accounting':
         return (
           <div className="p-6">

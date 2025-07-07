@@ -20,11 +20,20 @@ const DashboardView = () => {
       setLoading(true);
       const [statsRes, membersRes] = await Promise.all([
         axios.get(`${API_URL}/dashboard/stats`),
-        axios.get(`${API_URL}/members`)
+        axios.get(`${API_URL}/members?limit=5&sortBy=created_at&sortOrder=DESC`) // Enhanced API call
       ]);
       
       setStats(statsRes.data);
-      setMembers(membersRes.data);
+      
+      // ✅ Handle Enhanced API Response Format
+      if (membersRes.data.members) {
+        // New enhanced API response
+        setMembers(membersRes.data.members);
+      } else {
+        // Legacy API response - fallback
+        setMembers(Array.isArray(membersRes.data) ? membersRes.data : []);
+      }
+      
       setError(null);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -101,7 +110,7 @@ const DashboardView = () => {
                 {t('dashboard.stats.activeMembers')}
               </h3>
               <p className="text-3xl font-bold text-green-600">
-                {members.filter(m => m.status === 'active').length}
+                {Array.isArray(members) ? members.filter(m => m.status === 'active').length : 0}
               </p>
             </div>
           </div>
@@ -149,10 +158,10 @@ const DashboardView = () => {
           </div>
         </div>
         <div className="p-6">
-          {members.length === 0 ? (
+          {!Array.isArray(members) || members.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">👥</div>
-              <p className="text-gray-500 mb-4">{t('noMembers')}</p>
+              <p className="text-gray-500 mb-4">{t('noMembers', 'Keine Mitglieder vorhanden')}</p>
               <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
                 {t('members.addFirst', `Ersten ${t('members.single')} hinzufügen`)}
               </button>
@@ -164,7 +173,7 @@ const DashboardView = () => {
                   <div className="flex items-center">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                       <span className="text-blue-600 font-semibold">
-                        {member.firstName.charAt(0)}{member.lastName.charAt(0)}
+                        {member.firstName?.charAt(0) || '?'}{member.lastName?.charAt(0) || '?'}
                       </span>
                     </div>
                     <div className="ml-4">
@@ -175,10 +184,13 @@ const DashboardView = () => {
                   <div className="flex items-center space-x-3">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                       member.status === 'active' ? 'bg-green-100 text-green-800' :
+                      member.status === 'suspended' ? 'bg-red-100 text-red-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
                       {member.status === 'active' 
                         ? t('members.status.active')
+                        : member.status === 'suspended'
+                        ? t('members.status.suspended')
                         : t('members.status.inactive')
                       }
                     </span>

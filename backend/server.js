@@ -1,4 +1,4 @@
-// backend/server.js - COMPLETE VERSION with IBAN validation
+// backend/server.js - COMPLETE VERSION with Enhanced Members API
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -33,7 +33,7 @@ async function initializeDatabase() {
     console.log('🔗 DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
     
     // Dynamic import to handle potential module issues
-    const { Sequelize, DataTypes } = require('sequelize');
+    const { Sequelize, DataTypes, Op } = require('sequelize');
     
     // Create sequelize instance with enhanced error handling
     sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://orgasuite_user:orgasuite_password@localhost:5432/orgasuite', {
@@ -53,6 +53,9 @@ async function initializeDatabase() {
     // Test connection first
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connection established successfully');
+
+    // Make Op available globally for use in routes
+    sequelize.Op = Op;
 
     // Define models inline to avoid import issues
     Organization = sequelize.define('Organization', {
@@ -909,29 +912,229 @@ app.get('/api/dashboard/stats', async (req, res) => {
   }
 });
 
-// ==================== MEMBERS CRUD ====================
+// ==================== ENHANCED MEMBERS CRUD WITH FILTERING ====================
 
-// Get all members
+// Enhanced GET /api/members endpoint mit Query-Parameter Support
 app.get('/api/members', async (req, res) => {
   try {
     if (!Member || !Organization) {
       throw new Error('Models not initialized');
     }
 
-    const members = await Member.findAll({
+    // Query Parameters extrahieren
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = 'created_at',
+      sortOrder = 'DESC',
+      search = '',
+      status = '',
+      memberNumber = '',
+      firstName = '',
+      lastName = '',
+      email = '',
+      phone = ''
+    } = req.query;
+
+    // Pagination Setup
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const pageLimit = parseInt(limit);
+
+    // Where Conditions aufbauen
+    const whereConditions = {};
+    
+    // Status Filter
+    if (status && ['active', 'inactive', 'suspended'].includes(status)) {
+      whereConditions.status = status;
+    }
+
+    // Spezifische Feld-Filter
+    if (memberNumber) {
+      whereConditions.memberNumber = {
+        [Op.iLike]: `%${memberNumber}%`
+      };
+    }
+
+    if (firstName) {
+      whereConditions.firstName = {
+        [Op.iLike]: `%${firstName}%`
+      };
+    }
+
+    if (lastName) {
+      whereConditions.lastName = {
+        [Op.iLike]: `%${lastName}%`
+      };
+    }
+
+    if (email) {
+      whereConditions.email = {
+        [Op.iLike]: `%${email}%`
+      };
+    }
+
+    if (phone) {
+      whereConditions.phone = {
+        [Op.iLike]: `%${phone}%`
+      };
+    }
+
+    // Full-text Search Condition
+    let searchCondition = {};
+    if (search) {
+      searchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${search}%` } },
+          { lastName: { [Op.iLike]: `%${search}%` } },
+          { email: { [Op.iLike]: `%${search}%` } },
+          { memberNumber: { [Op.iLike]: `%${search}%` } },
+          { phone: { [Op.iLike]: `%${search}%` } },
+          { status: { [Op.iLike]: `%${search}%` } }
+        ]
+      };
+    }
+
+    // Kombiniere Where Conditions
+    const finalWhereCondition = {
+      ...whereConditions,
+      ...searchCondition
+    };
+
+    // Sortierung validieren und aufbauen
+    const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt'];
+    const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+
+    // Spezielle Sortierung für zusammengesetzte Felder
+    let orderClause;
+    if (sortBy === 'name') {
+      orderClause = [
+        ['firstName', validSortOrder],
+        ['lastName', validSortOrder]
+      ];
+    } else {
+      orderClause = [[validSortField, validSortOrder]];
+    }
+
+    // Haupt-Query mit Pagination
+    const { count, rows: members } = await Member.findAndCountAll({
+      where: finalWhereCondition,
       include: [{ 
         model: Organization,
-        as: 'organization'
+        as: 'organization',
+        attributes: ['id', 'name', 'type']
       }],
-      order: [['created_at', 'DESC']]
+      order: orderClause,
+      limit: pageLimit,
+      offset: offset,
+      distinct: true // Wichtig für korrekte count bei includes
+    });
+
+    // Pagination Metadaten
+    const totalPages = Math.ceil(count / pageLimit);
+    const hasNextPage = parseInt(page) < totalPages;
+    const hasPrevPage = parseInt(page) > 1;
+
+    console.log(`✅ Retrieved ${members.length} of ${count} members (Page ${page}/${totalPages})`);
+
+    res.json({
+      members,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalItems: count,
+        itemsPerPage: pageLimit,
+        hasNextPage,
+        hasPrevPage
+      },
+      filters: {
+        search,
+        status,
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        phone
+      },
+      sorting: {
+        sortBy: validSortField,
+        sortOrder: validSortOrder
+      }
+    });
+
+  } catch (error) {
+    logError('GET_MEMBERS_ENHANCED', error);
+    
+    // More detailed error logging for debugging
+    console.error('Enhanced Members API Error Details:', {
+      query: req.query,
+      error: error.message,
+      stack: error.stack
     });
     
-    console.log(`✅ Retrieved ${members.length} members`);
-    res.json(members);
-  } catch (error) {
-    logError('GET_MEMBERS', error);
     res.status(500).json({ 
       error: 'Failed to fetch members',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// ==================== MEMBER STATISTICS ENDPOINT ====================
+app.get('/api/members/stats', async (req, res) => {
+  try {
+    if (!Member) {
+      throw new Error('Member model not initialized');
+    }
+
+    // Grundlegende Statistiken
+    const [total, active, inactive, suspended] = await Promise.all([
+      Member.count(),
+      Member.count({ where: { status: 'active' } }),
+      Member.count({ where: { status: 'inactive' } }),
+      Member.count({ where: { status: 'suspended' } })
+    ]);
+
+    // Neueste Mitglieder (letzte 7 Tage)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const newMembersThisWeek = await Member.count({
+      where: {
+        created_at: {
+          [Op.gte]: oneWeekAgo
+        }
+      }
+    });
+
+    // Mitglieder pro Monat (letzte 12 Monate)
+    const monthlyStats = await sequelize.query(`
+      SELECT 
+        DATE_TRUNC('month', created_at) as month,
+        COUNT(*) as count
+      FROM members 
+      WHERE created_at >= CURRENT_DATE - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', created_at)
+      ORDER BY month ASC
+    `, {
+      type: sequelize.QueryTypes.SELECT
+    });
+
+    res.json({
+      overview: {
+        total,
+        active,
+        inactive,
+        suspended,
+        newThisWeek: newMembersThisWeek
+      },
+      monthlyGrowth: monthlyStats,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logError('MEMBER_STATS', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch member statistics',
       details: error.message
     });
   }
@@ -1170,6 +1373,329 @@ app.delete('/api/members/:id', async (req, res) => {
   }
 });
 
+// ==================== BULK OPERATIONS ====================
+
+// Bulk Update Members
+app.patch('/api/members/bulk', async (req, res) => {
+  try {
+    if (!Member) {
+      throw new Error('Member model not initialized');
+    }
+
+    const { memberIds, updates } = req.body;
+
+    if (!Array.isArray(memberIds) || memberIds.length === 0) {
+      return res.status(400).json({ error: 'memberIds array is required' });
+    }
+
+    if (!updates || Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'updates object is required' });
+    }
+
+    // Validiere Update-Felder
+    const allowedFields = ['status', 'phone', 'address'];
+    const updateData = {};
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        updateData[key] = value;
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ 
+        error: 'No valid update fields provided',
+        allowedFields
+      });
+    }
+
+    // Bulk Update durchführen
+    const [affectedCount] = await Member.update(updateData, {
+      where: {
+        id: {
+          [Op.in]: memberIds
+        }
+      }
+    });
+
+    console.log(`✅ Bulk updated ${affectedCount} members`);
+
+    res.json({
+      message: 'Bulk update successful',
+      affectedCount,
+      updates: updateData
+    });
+
+  } catch (error) {
+    logError('BULK_UPDATE_MEMBERS', error);
+    res.status(500).json({ 
+      error: 'Failed to bulk update members',
+      details: error.message
+    });
+  }
+});
+
+// Bulk Delete Members
+app.delete('/api/members/bulk', async (req, res) => {
+  try {
+    if (!Member) {
+      throw new Error('Member model not initialized');
+    }
+
+    const { memberIds } = req.body;
+
+    if (!Array.isArray(memberIds) || memberIds.length === 0) {
+      return res.status(400).json({ error: 'memberIds array is required' });
+    }
+
+    // Sicherheitscheck: Maximal 50 Members auf einmal löschen
+    if (memberIds.length > 50) {
+      return res.status(400).json({ 
+        error: 'Too many members for bulk deletion. Maximum 50 allowed.' 
+      });
+    }
+
+    // Members für Logging abrufen
+    const membersToDelete = await Member.findAll({
+      where: {
+        id: {
+          [Op.in]: memberIds
+        }
+      },
+      attributes: ['id', 'firstName', 'lastName', 'memberNumber']
+    });
+
+    // Bulk Delete durchführen
+    const deletedCount = await Member.destroy({
+      where: {
+        id: {
+          [Op.in]: memberIds
+        }
+      }
+    });
+
+    console.log(`✅ Bulk deleted ${deletedCount} members:`, 
+      membersToDelete.map(m => `${m.firstName} ${m.lastName} (${m.memberNumber})`).join(', ')
+    );
+
+    res.json({
+      message: 'Bulk deletion successful',
+      deletedCount,
+      deletedMembers: membersToDelete.map(m => ({
+        id: m.id,
+        name: `${m.firstName} ${m.lastName}`,
+        memberNumber: m.memberNumber
+      }))
+    });
+
+  } catch (error) {
+    logError('BULK_DELETE_MEMBERS', error);
+    res.status(500).json({ 
+      error: 'Failed to bulk delete members',
+      details: error.message
+    });
+  }
+});
+
+// ==================== EXPORT ENDPOINTS ====================
+
+// Export Members als CSV
+app.get('/api/members/export/csv', async (req, res) => {
+  try {
+    if (!Member || !Organization) {
+      throw new Error('Models not initialized');
+    }
+
+    // Alle Members abrufen (oder mit Filtern)
+    const { status, search } = req.query;
+    
+    const whereConditions = {};
+    if (status) whereConditions.status = status;
+    
+    let searchCondition = {};
+    if (search) {
+      searchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${search}%` } },
+          { lastName: { [Op.iLike]: `%${search}%` } },
+          { email: { [Op.iLike]: `%${search}%` } },
+          { memberNumber: { [Op.iLike]: `%${search}%` } }
+        ]
+      };
+    }
+
+    const members = await Member.findAll({
+      where: { ...whereConditions, ...searchCondition },
+      include: [{ 
+        model: Organization,
+        as: 'organization',
+        attributes: ['name', 'type']
+      }],
+      order: [['firstName', 'ASC'], ['lastName', 'ASC']]
+    });
+
+    // CSV Headers (abhängig von Organisation)
+    const orgType = members[0]?.organization?.type || 'verein';
+    const csvHeaders = [
+      orgType === 'verein' ? 'Mitgliedsnummer' : 'Kundennummer',
+      'Vorname',
+      'Nachname', 
+      'E-Mail',
+      'Telefon',
+      'Status',
+      'Straße',
+      'PLZ',
+      'Stadt',
+      'Land',
+      orgType === 'verein' ? 'Mitglied seit' : 'Kunde seit',
+      'Erstellt am'
+    ];
+
+    // CSV Daten erstellen
+    const csvRows = members.map(member => [
+      member.memberNumber || '',
+      member.firstName || '',
+      member.lastName || '',
+      member.email || '',
+      member.phone || '',
+      member.status || '',
+      member.address?.street || '',
+      member.address?.zip || '',
+      member.address?.city || '',
+      member.address?.country || '',
+      member.joinedAt ? new Date(member.joinedAt).toLocaleDateString('de-DE') : '',
+      new Date(member.created_at).toLocaleDateString('de-DE')
+    ]);
+
+    // CSV String zusammenbauen
+    const csvContent = [
+      csvHeaders.join(','),
+      ...csvRows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Response Headers für Download
+    const fileName = `${orgType}_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    
+    // UTF-8 BOM für Excel-Kompatibilität
+    res.write('\uFEFF');
+    res.write(csvContent);
+    res.end();
+
+    console.log(`✅ Exported ${members.length} members to CSV: ${fileName}`);
+
+  } catch (error) {
+    logError('EXPORT_MEMBERS_CSV', error);
+    res.status(500).json({ 
+      error: 'Failed to export members',
+      details: error.message
+    });
+  }
+});
+
+// ==================== SEARCH SUGGESTIONS ====================
+
+// Autocomplete/Suggestions für Suche
+app.get('/api/members/suggestions', async (req, res) => {
+  try {
+    if (!Member) {
+      throw new Error('Member model not initialized');
+    }
+
+    const { q: query, field = 'all', limit = 10 } = req.query;
+
+    if (!query || query.length < 2) {
+      return res.json({ suggestions: [] });
+    }
+
+    let suggestions = [];
+    const searchTerm = `%${query}%`;
+
+    switch (field) {
+      case 'firstName':
+        suggestions = await Member.findAll({
+          attributes: [[sequelize.fn('DISTINCT', sequelize.col('first_name')), 'value']],
+          where: { firstName: { [Op.iLike]: searchTerm } },
+          limit: parseInt(limit),
+          raw: true
+        });
+        break;
+
+      case 'lastName':
+        suggestions = await Member.findAll({
+          attributes: [[sequelize.fn('DISTINCT', sequelize.col('last_name')), 'value']],
+          where: { lastName: { [Op.iLike]: searchTerm } },
+          limit: parseInt(limit),
+          raw: true
+        });
+        break;
+
+      case 'email':
+        suggestions = await Member.findAll({
+          attributes: [[sequelize.fn('DISTINCT', sequelize.col('email')), 'value']],
+          where: { email: { [Op.iLike]: searchTerm } },
+          limit: parseInt(limit),
+          raw: true
+        });
+        break;
+
+      case 'memberNumber':
+        suggestions = await Member.findAll({
+          attributes: [[sequelize.fn('DISTINCT', sequelize.col('member_number')), 'value']],
+          where: { memberNumber: { [Op.iLike]: searchTerm } },
+          limit: parseInt(limit),
+          raw: true
+        });
+        break;
+
+      default: // 'all'
+        // Gemischte Vorschläge aus verschiedenen Feldern
+        const [firstNames, lastNames, emails] = await Promise.all([
+          Member.findAll({
+            attributes: [[sequelize.fn('DISTINCT', sequelize.col('first_name')), 'value']],
+            where: { firstName: { [Op.iLike]: searchTerm } },
+            limit: 3,
+            raw: true
+          }),
+          Member.findAll({
+            attributes: [[sequelize.fn('DISTINCT', sequelize.col('last_name')), 'value']],
+            where: { lastName: { [Op.iLike]: searchTerm } },
+            limit: 3,
+            raw: true
+          }),
+          Member.findAll({
+            attributes: [[sequelize.fn('DISTINCT', sequelize.col('email')), 'value']],
+            where: { email: { [Op.iLike]: searchTerm } },
+            limit: 4,
+            raw: true
+          })
+        ]);
+
+        suggestions = [
+          ...firstNames.map(s => ({ ...s, type: 'firstName' })),
+          ...lastNames.map(s => ({ ...s, type: 'lastName' })),
+          ...emails.map(s => ({ ...s, type: 'email' }))
+        ];
+        break;
+    }
+
+    res.json({
+      suggestions: suggestions.map(s => s.value || s).filter(Boolean).slice(0, parseInt(limit)),
+      query,
+      field
+    });
+
+  } catch (error) {
+    logError('MEMBER_SUGGESTIONS', error);
+    res.status(500).json({ 
+      error: 'Failed to get suggestions',
+      details: error.message
+    });
+  }
+});
+
 // ==================== UTILITY ENDPOINTS ====================
 
 // Get organization types
@@ -1343,19 +1869,28 @@ async function startServer() {
     console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
     console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
     console.log('');
-    console.log('Available endpoints:');
-    console.log('📋 GET  /api/health - Health check');
+    console.log('📋 Available endpoints:');
+    console.log('🔧 GET  /api/health - Health check');
     console.log('🐛 GET  /api/debug/db-status - Database status');
     console.log('🏢 GET  /api/organization - Get organization');
     console.log('🏢 POST /api/organization - Create/update organization (with IBAN validation)');
     console.log('🎮 POST /api/setup-demo - Setup demo data (with validated IBANs)');
     console.log('🏦 POST /api/validate-iban - Validate single IBAN');
     console.log('📊 GET  /api/dashboard/stats - Dashboard statistics');
-    console.log('👥 GET  /api/members - Get all members');
+    console.log('');
+    console.log('👥 ENHANCED MEMBERS API:');
+    console.log('📋 GET  /api/members - Enhanced with search, filter, sort, pagination');
+    console.log('📈 GET  /api/members/stats - Member statistics');
     console.log('👤 GET  /api/members/:id - Get single member');
     console.log('👤 POST /api/members - Create member (with IBAN validation)');
     console.log('👤 PUT  /api/members/:id - Update member (with IBAN validation)');
     console.log('👤 DELETE /api/members/:id - Delete member');
+    console.log('🔄 PATCH /api/members/bulk - Bulk update members');
+    console.log('🗑️ DELETE /api/members/bulk - Bulk delete members');
+    console.log('📄 GET  /api/members/export/csv - Export as CSV');
+    console.log('🔍 GET  /api/members/suggestions - Search suggestions');
+    console.log('');
+    console.log('🔧 UTILITY ENDPOINTS:');
     console.log('📋 GET  /api/organization-types - Get organization types');
     if (process.env.NODE_ENV === 'development') {
       console.log('🧪 GET  /api/dev/test-iban - Test IBAN validation (dev only)');
@@ -1368,6 +1903,15 @@ async function startServer() {
     console.log('✅ Automatic formatting and BLZ extraction');
     console.log('✅ Organization and Member IBAN support');
     console.log('✅ Comprehensive error messages');
+    console.log('');
+    console.log('📊 Enhanced Members Features:');
+    console.log('🔍 Server-side search and filtering');
+    console.log('📄 Pagination with configurable page sizes');
+    console.log('📈 Advanced sorting on all columns');
+    console.log('📊 Member statistics and analytics');
+    console.log('🔄 Bulk operations (update/delete)');
+    console.log('📄 CSV export with filtering');
+    console.log('💡 Search suggestions and autocomplete');
     console.log('🏢 ====================================');
     console.log('');
   });
