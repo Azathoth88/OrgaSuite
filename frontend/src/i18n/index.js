@@ -42,6 +42,8 @@ const getTranslations = (orgType, language) => {
     'navigation.documentsDesc': language === 'en' ? 'Files and Attachments' : 'Dateien und Anhänge',
     'navigation.events': language === 'en' ? 'Events' : 'Termine',
     'navigation.eventsDesc': language === 'en' ? 'Events and Meetings' : 'Veranstaltungen und Meetings',
+    'navigation.configuration': language === 'en' ? 'Configuration' : 'Konfiguration',
+    'navigation.configurationDesc': language === 'en' ? 'System Settings' : 'Systemeinstellungen',
     
     // Organization
     'organization.notFound': language === 'en' ? 'No organization found' : 'Keine Organisation gefunden',
@@ -91,7 +93,126 @@ const getTranslations = (orgType, language) => {
     'organization.bank.infoTitle': language === 'en' ? 'Usage of Bank Details' : 'Verwendung der Bankdaten',
     'organization.bank.infoDesc': language === 'en' ? 'These bank details will be used for outgoing invoices, payment requests and other documents.' : 'Diese Bankverbindung wird für ausgehende Rechnungen, Zahlungsaufforderungen und andere Dokumente verwendet.',
 
+    // ✅ NEUE KONFIGURATION ÜBERSETZUNGEN
+    // Configuration - General
+    'configuration.title': language === 'en' ? 'Configuration' : 'Konfiguration',
+    'configuration.subtitle': language === 'en' ? 'System settings and membership configuration management' : 'Systemeinstellungen und Mitgliedschaftskonfiguration verwalten',
+    'configuration.reset': language === 'en' ? 'Reset to defaults' : 'Auf Standardwerte zurücksetzen',
+    'configuration.save': language === 'en' ? 'Save' : 'Speichern',
+    'configuration.saving': language === 'en' ? 'Saving...' : 'Speichere...',
 
+    // Configuration Tabs
+    'configuration.tabs.membership': language === 'en' ? 'Membership' : 'Mitgliedschaft',
+    'configuration.tabs.membershipDesc': language === 'en' ? 'Status, fees and billing cycles' : 'Status, Beiträge und Abrechnungszyklen',
+    'configuration.tabs.general': language === 'en' ? 'General' : 'Allgemein',
+    'configuration.tabs.generalDesc': language === 'en' ? 'Basic settings' : 'Grundeinstellungen',
+
+    // Member Status Configuration
+    'configuration.status.title': language === 'en' ? 'Manage Member Status with Fees' : 'Mitgliedsstatus mit Beiträgen verwalten',
+    'configuration.status.add': language === 'en' ? 'Add Status' : 'Status hinzufügen',
+    'configuration.status.key': language === 'en' ? 'Key' : 'Schlüssel',
+    'configuration.status.keyPlaceholder': language === 'en' ? 'e.g. active' : 'z.B. active',
+    'configuration.status.label': language === 'en' ? 'Label' : 'Bezeichnung',
+    'configuration.status.labelPlaceholder': language === 'en' ? 'e.g. Active' : 'z.B. Aktiv',
+    'configuration.status.color': language === 'en' ? 'Color' : 'Farbe',
+    'configuration.status.preview': language === 'en' ? 'Preview' : 'Vorschau',
+    'configuration.status.default': language === 'en' ? 'Default' : 'Standard',
+    'configuration.status.remove': language === 'en' ? 'Remove status' : 'Status entfernen',
+    'configuration.status.description': language === 'en' ? 'Description' : 'Beschreibung',
+    'configuration.status.descriptionPlaceholder': language === 'en' ? 'Description of the status (optional)' : 'Beschreibung des Status (optional)',
+    'configuration.status.minRequired': language === 'en' ? 'At least one status must exist.' : 'Mindestens ein Status muss vorhanden sein.',
+
+    // Status Billing Configuration
+    'configuration.status.billingTitle': language === 'en' ? 'Fee and Billing Settings' : 'Beitrags- und Abrechnungseinstellungen',
+    'configuration.status.billingActive': language === 'en' ? 'Charge fees' : 'Beiträge erheben',
+    'configuration.status.billingActiveHelp': language === 'en' ? 'If disabled, no fees will be calculated' : 'Wenn deaktiviert, werden keine Beiträge berechnet',
+    'configuration.status.feeAmount': language === 'en' ? 'Fee Amount' : 'Beitragshöhe',
+    'configuration.status.billingFrequency': language === 'en' ? 'Billing Cycle' : 'Abrechnungsturnus',
+    'configuration.status.dueDay': language === 'en' ? 'Due Day' : 'Fälligkeitstag',
+    'configuration.status.previewInfo': language === 'en' ? 'Preview: Members with status' : 'Vorschau: Mitglieder mit Status',
+    'configuration.status.previewPay': language === 'en' ? 'pay' : 'zahlen',
+    'configuration.status.previewOn': language === 'en' ? 'on the' : 'am',
+    'configuration.status.previewOfPeriod': language === 'en' ? 'of the period' : 'des Zeitraums',
+    'configuration.status.noFeesInfo': language === 'en' ? 'Info: No automatic fees are charged for this status.' : 'Info: Für diesen Status werden keine automatischen Beiträge erhoben.',
+
+    // Default Currency
+    'configuration.defaultCurrency.title': language === 'en' ? 'Default Currency' : 'Standard-Währung',
+    'configuration.defaultCurrency.label': language === 'en' ? 'Currency for all fees' : 'Währung für alle Beiträge',
+
+    // Membership Fees Configuration
+    'configuration.fees.title': language === 'en' ? 'Default Membership Fee' : 'Standard-Mitgliedsbeitrag',
+    'configuration.fees.amount': language === 'en' ? 'Amount' : 'Betrag',
+    'configuration.fees.currency': language === 'en' ? 'Currency' : 'Währung',
+    'configuration.fees.gracePeriod': language === 'en' ? 'Grace Period (days)' : 'Kulanzzeit (Tage)',
+
+    // Billing Configuration
+    'configuration.billing.title': language === 'en' ? 'Billing Cycle' : 'Abrechnungszyklus',
+    'configuration.billing.frequency': language === 'en' ? 'Billing Frequency' : 'Abrechnungsfrequenz',
+    'configuration.billing.dueDay': language === 'en' ? 'Due Day' : 'Fälligkeitstag',
+    'configuration.billing.dueDayHelp.monthly': language === 'en' ? 'Day of the month (1-31)' : 'Tag im Monat (1-31)',
+    'configuration.billing.dueDayHelp.quarterly': language === 'en' ? 'Day in the first quarter month (1-31)' : 'Tag im ersten Quartalsmonat (1-31)',
+    'configuration.billing.dueDayHelp.yearly': language === 'en' ? 'Day of the year (1-365)' : 'Tag im Jahr (1-365)',
+
+    // Billing Frequencies
+    'configuration.billing.monthly': language === 'en' ? 'Monthly' : 'Monatlich',
+    'configuration.billing.monthlyDesc': language === 'en' ? 'Every month' : 'Jeden Monat',
+    'configuration.billing.quarterly': language === 'en' ? 'Quarterly' : 'Quartalsweise',
+    'configuration.billing.quarterlyDesc': language === 'en' ? 'Every 3 months' : 'Alle 3 Monate',
+    'configuration.billing.yearly': language === 'en' ? 'Yearly' : 'Jährlich',
+    'configuration.billing.yearlyDesc': language === 'en' ? 'Once per year' : 'Einmal pro Jahr',
+    'configuration.billing.custom': language === 'en' ? 'Custom' : 'Benutzerdefiniert',
+    'configuration.billing.customDesc': language === 'en' ? 'Individual period' : 'Individueller Zeitraum',
+
+    // Reminders Configuration
+    'configuration.reminders.title': language === 'en' ? 'Reminders and Dunning' : 'Erinnerungen und Mahnungen',
+    'configuration.reminders.daysBeforeDue': language === 'en' ? 'Reminders (days before due)' : 'Erinnerungen (Tage vor Fälligkeit)',
+    'configuration.reminders.first': language === 'en' ? 'First reminder' : 'Erste Erinnerung',
+    'configuration.reminders.second': language === 'en' ? 'Second reminder' : 'Zweite Erinnerung',
+    'configuration.reminders.nth': language === 'en' ? '. reminder' : '. Erinnerung',
+    'configuration.reminders.add': language === 'en' ? 'Add reminder' : 'Erinnerung hinzufügen',
+    'configuration.reminders.removeLast': language === 'en' ? 'Remove last' : 'Letzte entfernen',
+    'configuration.reminders.days': language === 'en' ? 'Days' : 'Tage',
+
+    // General Settings
+    'configuration.general.title': language === 'en' ? 'Basic Settings' : 'Grundeinstellungen',
+    'configuration.general.dateFormat': language === 'en' ? 'Date Format' : 'Datumsformat',
+    'configuration.general.timeZone': language === 'en' ? 'Time Zone' : 'Zeitzone',
+    'configuration.general.preview': language === 'en' ? 'Configuration Preview' : 'Konfigurationsvorschau',
+
+    // Configuration Info
+    'configuration.info.title': language === 'en' ? 'Configuration Notes' : 'Hinweise zur Konfiguration',
+    'configuration.info.membershipChanges': language === 'en' ? 
+      'Changes to membership configuration affect all future billings' : 
+      'Änderungen an der Mitgliedschaftskonfiguration wirken sich auf alle zukünftigen Abrechnungen aus',
+    'configuration.info.existingBills': language === 'en' ? 
+      'Already sent invoices will not be changed retroactively' : 
+      'Bereits versendete Rechnungen werden nicht rückwirkend geändert',
+    'configuration.info.individualOverride': language === 'en' ? 
+      'Default settings can be overridden for individual members' : 
+      'Die Standardeinstellungen können für einzelne Mitglieder überschrieben werden',
+    'configuration.info.autoBackup': language === 'en' ? 
+      'A backup of the current configuration is created automatically' : 
+      'Ein Backup der aktuellen Konfiguration wird automatisch erstellt',
+
+    // Color Options
+    'configuration.colors.green': language === 'en' ? 'Green' : 'Grün',
+    'configuration.colors.blue': language === 'en' ? 'Blue' : 'Blau',
+    'configuration.colors.yellow': language === 'en' ? 'Yellow' : 'Gelb',
+    'configuration.colors.red': language === 'en' ? 'Red' : 'Rot',
+    'configuration.colors.gray': language === 'en' ? 'Gray' : 'Grau',
+    'configuration.colors.purple': language === 'en' ? 'Purple' : 'Lila',
+
+    // Currency Options
+    'configuration.currency.eur': language === 'en' ? 'Euro (€)' : 'Euro (€)',
+    'configuration.currency.usd': language === 'en' ? 'US Dollar ($)' : 'US-Dollar ($)',
+    'configuration.currency.chf': language === 'en' ? 'Swiss Franc (CHF)' : 'Schweizer Franken (CHF)',
+    'configuration.currency.gbp': language === 'en' ? 'British Pound (£)' : 'Britisches Pfund (£)',
+
+    // Time Zones
+    'configuration.timezone.berlin': language === 'en' ? 'Europe/Berlin (CEST)' : 'Europa/Berlin (MESZ)',
+    'configuration.timezone.vienna': language === 'en' ? 'Europe/Vienna (CEST)' : 'Europa/Wien (MESZ)',
+    'configuration.timezone.zurich': language === 'en' ? 'Europe/Zurich (CEST)' : 'Europa/Zürich (MESZ)',
+    'configuration.timezone.utc': language === 'en' ? 'UTC (Coordinated Universal Time)' : 'UTC (koordinierte Weltzeit)',
 
     // Dashboard
     'dashboard.modules': language === 'en' ? 'Modules' : 'Module',

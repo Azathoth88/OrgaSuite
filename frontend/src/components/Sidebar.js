@@ -42,6 +42,13 @@ const Sidebar = ({ activeView, setActiveView, isCollapsed, setIsCollapsed }) => 
       label: t('navigation.events', 'Termine'),
       icon: '📅',
       description: t('navigation.eventsDesc', 'Veranstaltungen und Meetings')
+    },
+    // ✅ NEUER KONFIGURATION MENÜPUNKT
+    {
+      id: 'configuration',
+      label: t('navigation.configuration', 'Konfiguration'),
+      icon: '⚙️',
+      description: t('navigation.configurationDesc', 'Systemeinstellungen')
     }
   ];
 

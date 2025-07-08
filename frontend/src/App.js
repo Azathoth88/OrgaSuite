@@ -5,7 +5,8 @@ import LanguageSwitcher from './components/LanguageSwitcher';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/views/DashboardView';
 import OrganizationView from './components/views/OrganizationView';
-import MembersView from './components/views/MembersView'; // ✅ Import der neuen MembersView
+import MembersView from './components/views/MembersView';
+import ConfigurationView from './components/views/ConfigurationView'; // ✅ Import der neuen ConfigurationView
 import OrganizationSetup from './components/OrganizationSetup';
 import './i18n'; // Initialize i18n
 
@@ -42,7 +43,10 @@ function AppContent() {
       case 'organization':
         return <OrganizationView />;
       case 'members':
-        return <MembersView />; // ✅ Neue MembersView anstatt Platzhalter
+        return <MembersView />;
+      // ✅ NEUE KONFIGURATION VIEW
+      case 'configuration':
+        return <ConfigurationView />;
       case 'accounting':
         return (
           <div className="p-6">

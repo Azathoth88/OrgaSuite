@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
 
@@ -6,6 +6,20 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const MembersView = () => {
   const { t, organization } = useOrgTranslation();
+  
+  // Refs für Input-Felder zur Fokus-Verwaltung
+  const searchInputRef = useRef(null);
+  const filterRefs = useRef({
+    status: null,
+    memberNumber: null,
+    firstName: null,
+    lastName: null,
+    email: null,
+    phone: null
+  });
+  const currentFocusedField = useRef(null);
+  const currentCursorPosition = useRef(null);
+  
   // States
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +43,7 @@ const MembersView = () => {
     email: '',
     phone: ''
   });
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -47,12 +62,73 @@ const MembersView = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  // Debounce filters (mit längerer Verzögerung für bessere UX)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 800); // 800ms delay für Filter
+
+    return () => clearTimeout(timer);
+  }, [filters]);
+
+  // Speichere Fokus vor dem Fetch
+  const saveFocusState = () => {
+    const activeElement = document.activeElement;
+    
+    // Check if search input is focused
+    if (searchInputRef.current && activeElement === searchInputRef.current) {
+      currentFocusedField.current = 'search';
+      currentCursorPosition.current = searchInputRef.current.selectionStart;
+      return;
+    }
+    
+    // Check filter inputs
+    Object.entries(filterRefs.current).forEach(([key, ref]) => {
+      if (ref && activeElement === ref) {
+        currentFocusedField.current = key;
+        currentCursorPosition.current = ref.selectionStart;
+      }
+    });
+  };
+
+  // Stelle Fokus nach dem Fetch wieder her
+  const restoreFocusState = () => {
+    // Kleine Verzögerung, damit DOM-Updates abgeschlossen sind
+    setTimeout(() => {
+      if (currentFocusedField.current === 'search' && searchInputRef.current) {
+        searchInputRef.current.focus();
+        if (currentCursorPosition.current !== null) {
+          searchInputRef.current.setSelectionRange(
+            currentCursorPosition.current, 
+            currentCursorPosition.current
+          );
+        }
+      } else if (currentFocusedField.current && filterRefs.current[currentFocusedField.current]) {
+        const input = filterRefs.current[currentFocusedField.current];
+        input.focus();
+        if (currentCursorPosition.current !== null) {
+          input.setSelectionRange(
+            currentCursorPosition.current, 
+            currentCursorPosition.current
+          );
+        }
+      }
+      
+      // Reset
+      currentFocusedField.current = null;
+      currentCursorPosition.current = null;
+    }, 50);
+  };
+
   useEffect(() => {
     fetchMembers();
-  }, [currentPage, itemsPerPage, sortConfig, filters, debouncedSearchTerm]);
+  }, [currentPage, itemsPerPage, sortConfig, debouncedFilters, debouncedSearchTerm]);
 
   const fetchMembers = async () => {
     try {
+      // Speichere Fokus-Status VOR dem Loading
+      saveFocusState();
+      
       setLoading(true);
       
       // Build query parameters for backend
@@ -63,7 +139,7 @@ const MembersView = () => {
         sortOrder: sortConfig.direction.toUpperCase(),
         search: debouncedSearchTerm,
         ...Object.fromEntries(
-          Object.entries(filters).filter(([_, value]) => value !== '')
+          Object.entries(debouncedFilters).filter(([_, value]) => value !== '')
         )
       });
 
@@ -91,6 +167,8 @@ const MembersView = () => {
       setError(t('common.loadError', 'Fehler beim Laden der Daten'));
     } finally {
       setLoading(false);
+      // Stelle Fokus wieder her NACH dem Loading
+      restoreFocusState();
     }
   };
 
@@ -103,14 +181,19 @@ const MembersView = () => {
     setSortConfig({ key, direction });
   };
 
-  // Filter Logic - mit Debouncing für bessere Performance
+  // Filter Logic - OHNE automatischen Seitenwechsel während der Eingabe
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
       ...prev,
       [key]: value
     }));
-    setCurrentPage(1); // Reset to first page when filtering
+    // Setze currentPage NICHT sofort auf 1, sondern erst wenn debounced
   };
+
+  // Setze Seite zurück, wenn debouncedFilters sich ändern
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedFilters, debouncedSearchTerm]);
 
   const clearFilters = () => {
     setFilters({
@@ -190,20 +273,21 @@ const MembersView = () => {
     );
   };
 
-  if (loading) {
+  // Loading Indicator - Subtiler, blockiert nicht das ganze UI
+  const LoadingOverlay = () => {
+    if (!loading) return null;
+    
     return (
-      <div className="p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">{t('common.loading', 'Lädt...')}</p>
-          </div>
+      <div className="absolute top-0 right-0 m-4">
+        <div className="bg-white rounded-lg shadow-lg p-3 flex items-center space-x-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+          <span className="text-sm text-gray-600">Lade...</span>
         </div>
       </div>
     );
-  }
+  };
 
-  if (error) {
+  if (error && members.length === 0) {
     return (
       <div className="p-6">
         <div className="text-center">
@@ -222,7 +306,10 @@ const MembersView = () => {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 relative">
+      {/* Subtile Loading-Anzeige */}
+      <LoadingOverlay />
+      
       {/* Header */}
       <div className="mb-6">
         <div className="flex justify-between items-center">
@@ -254,7 +341,7 @@ const MembersView = () => {
                 const params = new URLSearchParams({
                   search: debouncedSearchTerm,
                   ...Object.fromEntries(
-                    Object.entries(filters).filter(([_, value]) => value !== '')
+                    Object.entries(debouncedFilters).filter(([_, value]) => value !== '')
                   )
                 });
                 window.open(`${API_URL}/members/export/csv?${params}`, '_blank');
@@ -281,6 +368,7 @@ const MembersView = () => {
           <div className="mb-4">
             <div className="relative">
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -292,7 +380,10 @@ const MembersView = () => {
               </div>
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => {
+                    setSearchTerm('');
+                    searchInputRef.current?.focus();
+                  }}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
                 >
                   ✕
@@ -307,6 +398,7 @@ const MembersView = () => {
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
                 <select
+                  ref={el => filterRefs.current.status = el}
                   value={filters.status}
                   onChange={(e) => handleFilterChange('status', e.target.value)}
                   className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
@@ -323,6 +415,7 @@ const MembersView = () => {
                   {t('members.memberNumber')}
                 </label>
                 <input
+                  ref={el => filterRefs.current.memberNumber = el}
                   type="text"
                   value={filters.memberNumber}
                   onChange={(e) => handleFilterChange('memberNumber', e.target.value)}
@@ -334,6 +427,7 @@ const MembersView = () => {
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Vorname</label>
                 <input
+                  ref={el => filterRefs.current.firstName = el}
                   type="text"
                   value={filters.firstName}
                   onChange={(e) => handleFilterChange('firstName', e.target.value)}
@@ -345,6 +439,7 @@ const MembersView = () => {
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Nachname</label>
                 <input
+                  ref={el => filterRefs.current.lastName = el}
                   type="text"
                   value={filters.lastName}
                   onChange={(e) => handleFilterChange('lastName', e.target.value)}
@@ -356,6 +451,7 @@ const MembersView = () => {
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">E-Mail</label>
                 <input
+                  ref={el => filterRefs.current.email = el}
                   type="text"
                   value={filters.email}
                   onChange={(e) => handleFilterChange('email', e.target.value)}
@@ -372,6 +468,25 @@ const MembersView = () => {
                   Filter zurücksetzen
                 </button>
               </div>
+            </div>
+          )}
+          
+          {/* Aktive Filter-Anzeige */}
+          {(debouncedSearchTerm || Object.values(debouncedFilters).some(f => f)) && (
+            <div className="mt-3 flex items-center text-sm text-gray-600">
+              <span className="mr-2">Aktive Filter:</span>
+              {debouncedSearchTerm && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                  Suche: {debouncedSearchTerm}
+                </span>
+              )}
+              {Object.entries(debouncedFilters).map(([key, value]) => 
+                value ? (
+                  <span key={key} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
+                    {key}: {value}
+                  </span>
+                ) : null
+              )}
             </div>
           )}
         </div>

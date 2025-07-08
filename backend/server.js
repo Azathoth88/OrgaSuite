@@ -1,8 +1,9 @@
-// backend/server.js - FIXED VERSION with proper Sequelize Op usage
+// backend/server.js - COMPLETE VERSION WITH CONFIGURATION MANAGEMENT
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const { Sequelize, DataTypes, Op } = require('sequelize'); // ✅ FIX: Import Op directly at top level
 require('dotenv').config();
 
 const app = express();
@@ -24,26 +25,20 @@ const logError = (context, error) => {
   });
 };
 
-// ==================== DATABASE SETUP - MINIMAL OP FIX ====================
-let sequelize, Organization, Member, Account, Transaction, Op;
+// ==================== DATABASE SETUP WITH FIXED OP ====================
+let sequelize, Organization, Member, Account, Transaction;
 
 async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database connection...');
     console.log('🔗 DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
     
-    // ✅ MINIMAL FIX: Import and assign Op globally at module level
-    const { Sequelize, DataTypes, Op: SequelizeOp } = require('sequelize');
-    
-    // ✅ CRITICAL FIX: Assign Op to global variable IMMEDIATELY
-    Op = SequelizeOp;
-    
-    // ✅ VERIFY: Log Op availability
-    console.log('✅ Sequelize Op operators imported and assigned:', !!Op);
-    console.log('✅ Op.iLike available:', !!Op?.iLike);
+    // ✅ VERIFY Op is available
+    console.log('✅ Sequelize Op imported:', !!Op);
     console.log('✅ Op.or available:', !!Op?.or);
+    console.log('✅ Op.iLike available:', !!Op?.iLike);
     
-    // Create sequelize instance with enhanced error handling
+    // Create sequelize instance
     sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://orgasuite_user:orgasuite_password@localhost:5432/orgasuite', {
       dialect: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -58,19 +53,11 @@ async function initializeDatabase() {
       }
     });
 
-    // Test connection first
+    // Test connection
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connection established successfully');
-    
-    // ✅ ADDITIONAL VERIFICATION: Double-check Op is still available
-    if (!Op) {
-      console.error('❌ CRITICAL: Op operators lost after sequelize creation!');
-      Op = SequelizeOp; // Re-assign if lost
-    }
-    console.log('✅ Final Op verification - Available:', !!Op);
 
-
-    // Define models inline to avoid import issues
+    // Define models
     Organization = sequelize.define('Organization', {
       id: {
         type: DataTypes.INTEGER,
@@ -181,7 +168,7 @@ async function initializeDatabase() {
       updatedAt: 'updated_at'
     });
 
-    // Account Model (for future accounting)
+    // Account Model
     Account = sequelize.define('Account', {
       id: {
         type: DataTypes.INTEGER,
@@ -227,7 +214,7 @@ async function initializeDatabase() {
       timestamps: false
     });
 
-    // Transaction Model (for future accounting)
+    // Transaction Model
     Transaction = sequelize.define('Transaction', {
       id: {
         type: DataTypes.INTEGER,
@@ -357,7 +344,7 @@ async function initializeDatabase() {
       foreignKey: 'creditAccountId' 
     });
 
-    // Sync database with retry mechanism
+    // Sync database
     console.log('🔄 Synchronizing database models...');
     await sequelize.sync({ alter: true });
     console.log('✅ Database models synchronized successfully');
@@ -397,12 +384,11 @@ async function initializeDatabase() {
   }
 }
 
-// Enhanced migration function
+// Migration function
 async function runSimpleMigration() {
   try {
     console.log('🔄 Running database migrations...');
     
-    // Check if bank_details column exists, if not add it
     await sequelize.query(`
       DO $$ 
       BEGIN 
@@ -418,14 +404,11 @@ async function runSimpleMigration() {
     console.log('✅ Migration completed: bank_details column available');
     
   } catch (error) {
-    // Log error but don't fail startup
     logError('MIGRATION', error);
   }
 }
 
-// ==================== IBAN UTILS INTEGRATION ====================
-
-// Import IBAN utilities - if file doesn't exist, create inline fallback
+// ==================== IBAN UTILS ====================
 let validateIBANWithLogging, ibanValidationMiddleware;
 
 try {
@@ -436,7 +419,6 @@ try {
 } catch (error) {
   console.warn('⚠️ IBAN utilities not found, using fallback validation');
   
-  // Fallback IBAN validation
   validateIBANWithLogging = (iban, context) => {
     if (!iban) return { isValid: true, error: null, formatted: '', countryCode: null, bankCode: null };
     
@@ -457,10 +439,180 @@ try {
   ibanValidationMiddleware = (fieldName, required) => (req, res, next) => next();
 }
 
-// ==================== HEALTH CHECK WITH DATABASE STATUS ====================
+// ==================== CONFIGURATION VALIDATION ====================
+
+/**
+ * Validate membership configuration
+ * @param {object} config - Configuration object to validate
+ * @returns {object} - Validation result with isValid and errors
+ */
+function validateMembershipConfig(config) {
+  const errors = [];
+  
+  if (!config.membershipConfig) {
+    errors.push('membershipConfig is required');
+    return { isValid: false, errors };
+  }
+  
+  const { statuses, defaultCurrency } = config.membershipConfig;
+  
+  // Validate status array
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    errors.push('At least one membership status is required');
+  } else {
+    // Status-specific validation
+    statuses.forEach((status, index) => {
+      if (!status.key || typeof status.key !== 'string') {
+        errors.push(`Status ${index + 1}: key is required and must be a string`);
+      }
+      
+      if (!status.label || typeof status.label !== 'string') {
+        errors.push(`Status ${index + 1}: label is required and must be a string`);
+      }
+      
+      if (!status.color || typeof status.color !== 'string') {
+        errors.push(`Status ${index + 1}: color is required and must be a string`);
+      }
+      
+      // Validate billing configuration if present
+      if (status.billing) {
+        const { fee, frequency, dueDay, active } = status.billing;
+        
+        if (typeof active !== 'boolean') {
+          errors.push(`Status ${index + 1}: billing.active must be a boolean`);
+        }
+        
+        if (active) {
+          if (typeof fee !== 'number' || fee < 0) {
+            errors.push(`Status ${index + 1}: billing.fee must be a non-negative number when billing is active`);
+          }
+          
+          if (!['monthly', 'quarterly', 'yearly', 'custom'].includes(frequency)) {
+            errors.push(`Status ${index + 1}: billing.frequency must be one of: monthly, quarterly, yearly, custom`);
+          }
+          
+          if (typeof dueDay !== 'number' || dueDay < 1 || dueDay > 31) {
+            errors.push(`Status ${index + 1}: billing.dueDay must be a number between 1 and 31`);
+          }
+        }
+      }
+    });
+    
+    // Check exactly one default status exists
+    const defaultStatuses = statuses.filter(s => s.default === true);
+    if (defaultStatuses.length === 0) {
+      errors.push('Exactly one status must be marked as default');
+    } else if (defaultStatuses.length > 1) {
+      errors.push('Only one status can be marked as default');
+    }
+    
+    // Check for duplicate keys
+    const keys = statuses.map(s => s.key);
+    const uniqueKeys = [...new Set(keys)];
+    if (keys.length !== uniqueKeys.length) {
+      errors.push('Status keys must be unique');
+    }
+  }
+  
+  // Validate currency
+  if (!['EUR', 'USD', 'CHF', 'GBP'].includes(defaultCurrency)) {
+    errors.push('defaultCurrency must be one of: EUR, USD, CHF, GBP');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Enhance organization data with default configuration
+ * @param {object} orgData - Base organization data
+ * @param {string} orgType - Organization type (verein/unternehmen)
+ * @returns {object} - Enhanced organization data with configuration
+ */
+function enhanceOrgDataWithConfig(orgData, orgType) {
+  const defaultConfig = {
+    membershipConfig: {
+      statuses: [
+        { 
+          key: 'active', 
+          label: orgType === 'verein' ? 'Aktives Mitglied' : 'Aktiver Kunde', 
+          color: 'green', 
+          default: true,
+          description: orgType === 'verein' 
+            ? 'Vollwertige Mitgliedschaft mit allen Rechten' 
+            : 'Aktiver Kunde mit vollem Zugang',
+          billing: {
+            fee: orgType === 'verein' ? 50.00 : 120.00,
+            frequency: orgType === 'verein' ? 'yearly' : 'monthly',
+            dueDay: 1,
+            active: true
+          }
+        },
+        { 
+          key: 'inactive', 
+          label: orgType === 'verein' ? 'Inaktives Mitglied' : 'Inaktiver Kunde',
+          color: 'gray',
+          description: orgType === 'verein' 
+            ? 'Mitgliedschaft ruht temporär' 
+            : 'Kunde pausiert temporär',
+          billing: {
+            fee: 0.00,
+            frequency: 'yearly',
+            dueDay: 1,
+            active: false
+          }
+        },
+        { 
+          key: 'premium', 
+          label: orgType === 'verein' ? 'Premium-Mitglied' : 'Premium-Kunde',
+          color: 'purple',
+          description: orgType === 'verein' 
+            ? 'Mitgliedschaft mit erweiterten Leistungen' 
+            : 'Premium-Kunde mit besonderen Konditionen',
+          billing: {
+            fee: orgType === 'verein' ? 100.00 : 250.00,
+            frequency: 'yearly',
+            dueDay: 1,
+            active: true
+          }
+        },
+        { 
+          key: 'suspended', 
+          label: orgType === 'verein' ? 'Gesperrtes Mitglied' : 'Gesperrter Kunde',
+          color: 'red',
+          description: orgType === 'verein' 
+            ? 'Mitgliedschaft ist gesperrt' 
+            : 'Kunde ist gesperrt',
+          billing: {
+            fee: 0.00,
+            frequency: 'yearly',
+            dueDay: 1,
+            active: false
+          }
+        }
+      ],
+      defaultCurrency: 'EUR'
+    },
+    generalConfig: {
+      dateFormat: 'DD.MM.YYYY',
+      timeZone: 'Europe/Berlin',
+      currency: 'EUR'
+    }
+  };
+  
+  return {
+    ...orgData,
+    settings: defaultConfig
+  };
+}
+
+// ==================== API ROUTES ====================
+
+// Health Check
 app.get('/api/health', async (req, res) => {
   try {
-    // Test database connection
     await sequelize.authenticate();
     
     res.json({ 
@@ -471,13 +623,20 @@ app.get('/api/health', async (req, res) => {
       version: '1.0.0',
       features: {
         ibanValidation: !!validateIBANWithLogging,
+        configValidation: !!validateMembershipConfig,
         models: {
           Organization: !!Organization,
           Member: !!Member,
           Account: !!Account,
           Transaction: !!Transaction
         },
-        sequelizeOp: !!Op
+        sequelizeOp: !!Op,
+        operators: {
+          or: !!Op?.or,
+          iLike: !!Op?.iLike,
+          gte: !!Op?.gte,
+          in: !!Op?.in
+        }
       }
     });
   } catch (error) {
@@ -491,9 +650,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ==================== ORGANIZATION MANAGEMENT WITH IBAN ====================
-
-// Get current organization (setup check)
+// Get current organization
 app.get('/api/organization', async (req, res) => {
   try {
     if (!Organization) {
@@ -521,7 +678,7 @@ app.get('/api/organization', async (req, res) => {
   }
 });
 
-// Create/update organization WITH IBAN VALIDATION
+// Create/update organization
 app.post('/api/organization', async (req, res) => {
   try {
     if (!Organization) {
@@ -530,7 +687,6 @@ app.post('/api/organization', async (req, res) => {
 
     const { name, type, taxNumber, address, settings, bankDetails } = req.body;
     
-    // Validation
     if (!name || !type) {
       return res.status(400).json({ 
         error: 'Name and type are required' 
@@ -543,7 +699,6 @@ app.post('/api/organization', async (req, res) => {
       });
     }
     
-    // ✅ ENHANCED IBAN VALIDATION
     let validatedBankDetails = bankDetails || {};
     
     if (bankDetails?.iban) {
@@ -558,7 +713,6 @@ app.post('/api/organization', async (req, res) => {
         });
       }
       
-      // Enhance bank details with validated IBAN data
       validatedBankDetails = {
         ...bankDetails,
         iban: ibanValidation.formatted,
@@ -566,15 +720,11 @@ app.post('/api/organization', async (req, res) => {
         ibanBankCode: ibanValidation.bankCode,
         ibanValidatedAt: new Date().toISOString()
       };
-      
-      console.log(`✅ IBAN validated for organization: ${ibanValidation.countryCode} - ${ibanValidation.formatted}`);
     }
     
-    // Check if organization exists
     let organization = await Organization.findOne();
     
     if (organization) {
-      // Update existing
       await organization.update({
         name,
         type,
@@ -586,7 +736,6 @@ app.post('/api/organization', async (req, res) => {
       
       console.log(`✅ Organization updated: ${name} (${type})`);
     } else {
-      // Create new
       organization = await Organization.create({
         name,
         type,
@@ -620,7 +769,212 @@ app.post('/api/organization', async (req, res) => {
   }
 });
 
-// ==================== IBAN VALIDATION ENDPOINT ====================
+// ==================== ORGANIZATION CONFIGURATION ENDPOINTS ====================
+
+// GET /api/organization/config - Get organization configuration
+app.get('/api/organization/config', async (req, res) => {
+  try {
+    if (!Organization) {
+      throw new Error('Organization model not initialized');
+    }
+
+    const organization = await Organization.findOne({
+      order: [['created_at', 'ASC']]
+    });
+    
+    if (!organization) {
+      return res.status(404).json({ 
+        error: 'Organization not found',
+        message: 'Please set up an organization first' 
+      });
+    }
+    
+    // Extract configuration data
+    const config = organization.settings || {};
+    
+    res.json({
+      config,
+      lastUpdated: organization.updated_at,
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        type: organization.type
+      }
+    });
+  } catch (error) {
+    logError('GET_ORGANIZATION_CONFIG', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch organization configuration',
+      details: error.message
+    });
+  }
+});
+
+// PUT /api/organization/config - Update organization configuration
+app.put('/api/organization/config', async (req, res) => {
+  try {
+    if (!Organization) {
+      throw new Error('Organization model not initialized');
+    }
+
+    const { config } = req.body;
+    
+    if (!config) {
+      return res.status(400).json({ 
+        error: 'Configuration data is required' 
+      });
+    }
+    
+    // Validate configuration
+    const validation = validateMembershipConfig(config);
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        error: 'Configuration validation failed',
+        details: validation.errors
+      });
+    }
+    
+    // Find organization
+    const organization = await Organization.findOne();
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    // Create backup of current configuration
+    const backupConfig = {
+      ...organization.settings,
+      _backup: {
+        timestamp: new Date().toISOString(),
+        previousConfig: organization.settings
+      }
+    };
+    
+    // Update configuration
+    await organization.update({
+      settings: {
+        ...backupConfig,
+        ...config,
+        lastConfigUpdate: new Date().toISOString()
+      }
+    });
+    
+    console.log(`✅ Organization configuration updated for: ${organization.name}`);
+    
+    res.json({
+      message: 'Configuration updated successfully',
+      config: organization.settings,
+      validation: {
+        statusCount: config.membershipConfig?.statuses?.length || 0,
+        billingEnabledStatuses: config.membershipConfig?.statuses?.filter(s => s.billing?.active)?.length || 0,
+        defaultCurrency: config.membershipConfig?.defaultCurrency || 'EUR'
+      }
+    });
+  } catch (error) {
+    logError('UPDATE_ORGANIZATION_CONFIG', error);
+    if (error.name === 'SequelizeValidationError') {
+      res.status(400).json({ 
+        error: 'Validation error',
+        details: error.errors.map(e => e.message)
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Failed to update configuration',
+        details: error.message
+      });
+    }
+  }
+});
+
+// POST /api/organization/config/validate - Validate configuration without saving
+app.post('/api/organization/config/validate', async (req, res) => {
+  try {
+    const { config } = req.body;
+    
+    if (!config) {
+      return res.status(400).json({ 
+        error: 'Configuration data is required for validation' 
+      });
+    }
+    
+    const validation = validateMembershipConfig(config);
+    
+    // Calculate additional statistics
+    let stats = {};
+    if (validation.isValid && config.membershipConfig?.statuses) {
+      const statuses = config.membershipConfig.statuses;
+      stats = {
+        totalStatuses: statuses.length,
+        billingEnabledStatuses: statuses.filter(s => s.billing?.active).length,
+        defaultStatus: statuses.find(s => s.default)?.label || 'None',
+        uniqueFrequencies: [...new Set(statuses.map(s => s.billing?.frequency).filter(Boolean))],
+        totalFeesIfAllActive: statuses
+          .filter(s => s.billing?.active)
+          .reduce((sum, s) => sum + (s.billing?.fee || 0), 0),
+        currency: config.membershipConfig.defaultCurrency || 'EUR'
+      };
+    }
+    
+    res.json({
+      ...validation,
+      stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logError('VALIDATE_ORGANIZATION_CONFIG', error);
+    res.status(500).json({ 
+      error: 'Failed to validate configuration',
+      details: error.message
+    });
+  }
+});
+
+// GET /api/organization/member-statuses - Get available member statuses
+app.get('/api/organization/member-statuses', async (req, res) => {
+  try {
+    if (!Organization) {
+      throw new Error('Organization model not initialized');
+    }
+
+    const organization = await Organization.findOne();
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    const statuses = organization.settings?.membershipConfig?.statuses || [];
+    const defaultCurrency = organization.settings?.membershipConfig?.defaultCurrency || 'EUR';
+    
+    // Format status data for frontend
+    const formattedStatuses = statuses.map(status => ({
+      key: status.key,
+      label: status.label,
+      color: status.color,
+      description: status.description,
+      isDefault: status.default || false,
+      billing: {
+        active: status.billing?.active || false,
+        fee: status.billing?.fee || 0,
+        frequency: status.billing?.frequency || 'yearly',
+        dueDay: status.billing?.dueDay || 1,
+        currency: defaultCurrency
+      }
+    }));
+    
+    res.json({
+      statuses: formattedStatuses,
+      defaultCurrency,
+      totalStatuses: formattedStatuses.length,
+      billingEnabledCount: formattedStatuses.filter(s => s.billing.active).length
+    });
+  } catch (error) {
+    logError('GET_MEMBER_STATUSES', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch member statuses',
+      details: error.message
+    });
+  }
+});
+
+// IBAN validation endpoint
 app.post('/api/validate-iban', (req, res) => {
   try {
     const { iban } = req.body;
@@ -647,7 +1001,7 @@ app.post('/api/validate-iban', (req, res) => {
   }
 });
 
-// Setup demo organization and data WITH ENHANCED IBAN
+// Setup demo organization
 app.post('/api/setup-demo', async (req, res) => {
   try {
     if (!Organization || !Member) {
@@ -656,13 +1010,11 @@ app.post('/api/setup-demo', async (req, res) => {
 
     const { orgType = 'verein' } = req.body;
     
-    // Check if organization already exists
     const existingOrg = await Organization.findOne();
     if (existingOrg) {
       return res.status(400).json({ error: 'Organization already exists' });
     }
 
-    // Demo organization data with validated IBANs
     const orgData = {
       verein: {
         name: 'Demo Verein e.V.',
@@ -676,7 +1028,7 @@ app.post('/api/setup-demo', async (req, res) => {
         },
         bankDetails: {
           accountHolder: 'Demo Verein e.V.',
-          iban: 'DE89370400440532013000', // Valid test IBAN
+          iban: 'DE89370400440532013000',
           bic: 'COBADEFFXXX',
           bankName: 'Commerzbank AG'
         }
@@ -693,24 +1045,23 @@ app.post('/api/setup-demo', async (req, res) => {
         },
         bankDetails: {
           accountHolder: 'Musterfirma GmbH',
-          iban: 'DE12500105170648489890', // Valid test IBAN
+          iban: 'DE12500105170648489890',
           bic: 'INGDDEFFXXX',
           bankName: 'ING-DiBa AG'
         }
       }
     };
 
-    // ✅ VALIDATE DEMO IBAN
-    const selectedOrgData = orgData[orgType];
+    // Enhance with configuration
+    let selectedOrgData = enhanceOrgDataWithConfig(orgData[orgType], orgType);
+    
     if (selectedOrgData.bankDetails?.iban) {
       const ibanValidation = validateIBANWithLogging(selectedOrgData.bankDetails.iban, `Demo_${orgType}`);
       
       if (!ibanValidation.isValid) {
         console.warn(`⚠️ Demo IBAN for ${orgType} is invalid: ${ibanValidation.error}`);
-        // Remove invalid IBAN instead of failing
         delete selectedOrgData.bankDetails.iban;
       } else {
-        // Enhance with validation data
         selectedOrgData.bankDetails.iban = ibanValidation.formatted;
         selectedOrgData.bankDetails.ibanCountryCode = ibanValidation.countryCode;
         selectedOrgData.bankDetails.ibanBankCode = ibanValidation.bankCode;
@@ -718,10 +1069,8 @@ app.post('/api/setup-demo', async (req, res) => {
       }
     }
 
-    // Create organization
     const org = await Organization.create(selectedOrgData);
 
-    // Create demo members with enhanced data
     const memberData = {
       verein: [
         {
@@ -745,7 +1094,7 @@ app.post('/api/setup-demo', async (req, res) => {
             membershipFee: 50.00,
             paymentMethod: 'Lastschrift',
             bankDetails: {
-              iban: 'DE89370400440532013001', // Test IBAN for member
+              iban: 'DE89370400440532013001',
               accountHolder: 'Hans Müller'
             }
           }
@@ -879,10 +1228,12 @@ app.post('/api/setup-demo', async (req, res) => {
       organization: org,
       membersCreated: memberData[orgType].length,
       bankDetailsValidated: !!selectedOrgData.bankDetails?.iban,
+      configurationCreated: !!org.settings?.membershipConfig,
       features: {
         ibanValidation: true,
         memberData: true,
-        addressData: true
+        addressData: true,
+        membershipConfig: true
       }
     });
   } catch (error) {
@@ -894,7 +1245,7 @@ app.post('/api/setup-demo', async (req, res) => {
   }
 });
 
-// ==================== DASHBOARD STATS ====================
+// Dashboard stats
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
     if (!Member || !Organization) {
@@ -911,7 +1262,8 @@ app.get('/api/dashboard/stats', async (req, res) => {
       organization: organization ? {
         name: organization.name,
         type: organization.type,
-        hasBankDetails: !!(organization.bankDetails?.iban)
+        hasBankDetails: !!(organization.bankDetails?.iban),
+        hasConfiguration: !!(organization.settings?.membershipConfig)
       } : null,
       transactions: 0,
       accounts: 0,
@@ -926,28 +1278,25 @@ app.get('/api/dashboard/stats', async (req, res) => {
   }
 });
 
-// ==================== ENHANCED MEMBERS CRUD WITH COMPLETELY FIXED OP USAGE ====================
+// ==================== FIXED MEMBERS API ====================
 
-// ✅ COMPLETELY FIXED Enhanced GET /api/members endpoint 
+// ✅ COMPLETELY FIXED GET /api/members endpoint
 app.get('/api/members', async (req, res) => {
   try {
     console.log('📊 Members API called with query:', req.query);
 
-    // ✅ VALIDATE MODELS AND OP AVAILABILITY FIRST
-    if (!Member || !Organization || !sequelize || !Op) {
-      const errorMsg = 'Models or operators not initialized';
-      console.error('❌ Models check failed:', { 
-        Member: !!Member, 
-        Organization: !!Organization, 
-        sequelize: !!sequelize, 
-        Op: !!Op 
-      });
-      throw new Error(errorMsg);
+    // Validate models and Op
+    if (!Member || !Organization || !sequelize) {
+      throw new Error('Models not initialized');
     }
 
-    console.log('✅ All models and operators available');
+    // ✅ Check Op availability
+    if (!Op || !Op.or || !Op.iLike) {
+      console.error('❌ Sequelize Op not available:', { Op: !!Op, or: !!Op?.or, iLike: !!Op?.iLike });
+      throw new Error('Sequelize operators not available');
+    }
 
-    // Query Parameters extrahieren
+    // Extract query parameters
     const {
       page = 1,
       limit = 10,
@@ -962,97 +1311,62 @@ app.get('/api/members', async (req, res) => {
       phone = ''
     } = req.query;
 
-    console.log('📊 Parsed parameters:', { 
-      page, limit, sortBy, sortOrder, search, status, memberNumber, firstName, lastName, email, phone 
-    });
-
-    // Pagination Setup
+    // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const pageLimit = parseInt(limit);
 
-    // Where Conditions aufbauen
+    // Build where conditions
     const whereConditions = {};
     
-    // Status Filter
     if (status && ['active', 'inactive', 'suspended'].includes(status)) {
       whereConditions.status = status;
-      console.log('✅ Status filter applied:', status);
     }
 
-    // Spezifische Feld-Filter
     if (memberNumber) {
-      whereConditions.memberNumber = {
-        [Op.iLike]: `%${memberNumber}%`
-      };
-      console.log('✅ MemberNumber filter applied:', memberNumber);
+      whereConditions.memberNumber = { [Op.iLike]: `%${memberNumber}%` };
     }
 
     if (firstName) {
-      whereConditions.firstName = {
-        [Op.iLike]: `%${firstName}%`
-      };
-      console.log('✅ FirstName filter applied:', firstName);
+      whereConditions.firstName = { [Op.iLike]: `%${firstName}%` };
     }
 
     if (lastName) {
-      whereConditions.lastName = {
-        [Op.iLike]: `%${lastName}%`
-      };
-      console.log('✅ LastName filter applied:', lastName);
+      whereConditions.lastName = { [Op.iLike]: `%${lastName}%` };
     }
 
     if (email) {
-      whereConditions.email = {
-        [Op.iLike]: `%${email}%`
-      };
-      console.log('✅ Email filter applied:', email);
+      whereConditions.email = { [Op.iLike]: `%${email}%` };
     }
 
     if (phone) {
-      whereConditions.phone = {
-        [Op.iLike]: `%${phone}%`
-      };
-      console.log('✅ Phone filter applied:', phone);
+      whereConditions.phone = { [Op.iLike]: `%${phone}%` };
     }
 
-    // ✅ FIXED: Full-text Search Condition with proper Op usage
+    // Full-text search
     let searchCondition = {};
-    if (search) {
-      console.log('🔍 Applying search condition for:', search);
-      try {
-        searchCondition = {
-          [Op.or]: [
-            { firstName: { [Op.iLike]: `%${search}%` } },
-            { lastName: { [Op.iLike]: `%${search}%` } },
-            { email: { [Op.iLike]: `%${search}%` } },
-            { memberNumber: { [Op.iLike]: `%${search}%` } },
-            { phone: { [Op.iLike]: `%${search}%` } },
-            { status: { [Op.iLike]: `%${search}%` } }
-          ]
-        };
-        console.log('✅ Search condition created successfully');
-      } catch (searchError) {
-        console.error('❌ Error creating search condition:', searchError);
-        throw new Error(`Search condition error: ${searchError.message}`);
-      }
+    if (search && search.trim() !== '') {
+      searchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${search}%` } },
+          { lastName: { [Op.iLike]: `%${search}%` } },
+          { email: { [Op.iLike]: `%${search}%` } },
+          { memberNumber: { [Op.iLike]: `%${search}%` } },
+          { phone: { [Op.iLike]: `%${search}%` } }
+        ]
+      };
     }
 
-    // Kombiniere Where Conditions
+    // Combine conditions
     const finalWhereCondition = {
       ...whereConditions,
       ...searchCondition
     };
 
-    console.log('🔍 Final where condition:', JSON.stringify(finalWhereCondition, null, 2));
-
-    // Sortierung validieren und aufbauen
+    // Validate and build sort order
     const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt'];
     const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
     const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
-    console.log('📊 Sorting:', { field: validSortField, order: validSortOrder });
-
-    // Spezielle Sortierung für zusammengesetzte Felder
     let orderClause;
     if (sortBy === 'name') {
       orderClause = [
@@ -1063,41 +1377,30 @@ app.get('/api/members', async (req, res) => {
       orderClause = [[validSortField, validSortOrder]];
     }
 
-    console.log('📊 Order clause:', orderClause);
-
-    // ✅ ENHANCED: Haupt-Query mit verbesserter Fehlerbehandlung
-    let queryResult;
-    try {
-      console.log('🔍 Executing main query...');
-      queryResult = await Member.findAndCountAll({
-        where: finalWhereCondition,
-        include: [{ 
-          model: Organization,
-          as: 'organization',
-          attributes: ['id', 'name', 'type']
-        }],
-        order: orderClause,
-        limit: pageLimit,
-        offset: offset,
-        distinct: true // Wichtig für korrekte count bei includes
-      });
-      console.log('✅ Query executed successfully');
-    } catch (queryError) {
-      console.error('❌ Database query error:', queryError);
-      throw new Error(`Database query failed: ${queryError.message}`);
-    }
+    // Execute query
+    const queryResult = await Member.findAndCountAll({
+      where: finalWhereCondition,
+      include: [{ 
+        model: Organization,
+        as: 'organization',
+        attributes: ['id', 'name', 'type']
+      }],
+      order: orderClause,
+      limit: pageLimit,
+      offset: offset,
+      distinct: true
+    });
 
     const { count, rows: members } = queryResult;
 
-    // Pagination Metadaten
+    // Pagination metadata
     const totalPages = Math.ceil(count / pageLimit);
     const hasNextPage = parseInt(page) < totalPages;
     const hasPrevPage = parseInt(page) > 1;
 
-    console.log(`✅ Retrieved ${members.length} of ${count} members (Page ${page}/${totalPages})`);
+    console.log(`✅ Retrieved ${members.length} of ${count} members`);
 
-    // ✅ ENHANCED: Response mit verbesserter Struktur
-    const response = {
+    res.json({
       members,
       pagination: {
         currentPage: parseInt(page),
@@ -1122,27 +1425,10 @@ app.get('/api/members', async (req, res) => {
       },
       timestamp: new Date().toISOString(),
       success: true
-    };
-
-    console.log('✅ Sending successful response');
-    res.json(response);
+    });
 
   } catch (error) {
-    logError('GET_MEMBERS_ENHANCED', error);
-    
-    // More detailed error logging for debugging
-    console.error('❌ Enhanced Members API Error Details:', {
-      query: req.query,
-      error: error.message,
-      stack: error.stack,
-      modelsAvailable: {
-        Member: !!Member,
-        Organization: !!Organization,
-        sequelize: !!sequelize,
-        Op: !!Op
-      }
-    });
-    
+    logError('GET_MEMBERS', error);
     res.status(500).json({ 
       error: 'Failed to fetch members',
       details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
@@ -1152,14 +1438,13 @@ app.get('/api/members', async (req, res) => {
   }
 });
 
-// ==================== MEMBER STATISTICS ENDPOINT - FIXED ====================
+// Member statistics
 app.get('/api/members/stats', async (req, res) => {
   try {
     if (!Member || !sequelize || !Op) {
       throw new Error('Member model or operators not initialized');
     }
 
-    // Grundlegende Statistiken
     const [total, active, inactive, suspended] = await Promise.all([
       Member.count(),
       Member.count({ where: { status: 'active' } }),
@@ -1167,7 +1452,6 @@ app.get('/api/members/stats', async (req, res) => {
       Member.count({ where: { status: 'suspended' } })
     ]);
 
-    // Neueste Mitglieder (letzte 7 Tage)
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     
@@ -1179,7 +1463,6 @@ app.get('/api/members/stats', async (req, res) => {
       }
     });
 
-    // Mitglieder pro Monat (letzte 12 Monate)
     const monthlyStats = await sequelize.query(`
       SELECT 
         DATE_TRUNC('month', created_at) as month,
@@ -1241,7 +1524,7 @@ app.get('/api/members/:id', async (req, res) => {
   }
 });
 
-// Create new member (with optional IBAN validation)
+// Create new member
 app.post('/api/members', async (req, res) => {
   try {
     if (!Member || !Organization) {
@@ -1250,20 +1533,17 @@ app.post('/api/members', async (req, res) => {
 
     const { firstName, lastName, email, phone, address, memberNumber, status = 'active', membershipData } = req.body;
     
-    // Validation
     if (!firstName || !lastName || !email) {
       return res.status(400).json({ 
         error: 'First name, last name, and email are required' 
       });
     }
     
-    // Get the current organization
     const organization = await Organization.findOne();
     if (!organization) {
       return res.status(400).json({ error: 'No organization configured' });
     }
     
-    // Validate member IBAN if provided
     let validatedMembershipData = membershipData || {};
     if (membershipData?.bankDetails?.iban) {
       const ibanValidation = validateIBANWithLogging(membershipData.bankDetails.iban, 'Member');
@@ -1288,7 +1568,6 @@ app.post('/api/members', async (req, res) => {
       };
     }
     
-    // Generate member number if not provided
     let generatedMemberNumber = memberNumber;
     if (!generatedMemberNumber) {
       const prefix = organization.type === 'verein' ? 'M' : 'K';
@@ -1321,7 +1600,6 @@ app.post('/api/members', async (req, res) => {
       membershipData: validatedMembershipData
     });
     
-    // Fetch created member with organization
     const createdMember = await Member.findByPk(member.id, {
       include: [{ 
         model: Organization,
@@ -1345,7 +1623,7 @@ app.post('/api/members', async (req, res) => {
   }
 });
 
-// Update member (with optional IBAN validation)
+// Update member
 app.put('/api/members/:id', async (req, res) => {
   try {
     if (!Member || !Organization) {
@@ -1359,7 +1637,6 @@ app.put('/api/members/:id', async (req, res) => {
       return res.status(404).json({ error: 'Member not found' });
     }
     
-    // Validate member IBAN if provided and changed
     let validatedMembershipData = membershipData || {};
     if (membershipData?.bankDetails?.iban) {
       const ibanValidation = validateIBANWithLogging(membershipData.bankDetails.iban, 'Member_Update');
@@ -1395,7 +1672,6 @@ app.put('/api/members/:id', async (req, res) => {
       membershipData: validatedMembershipData
     });
     
-    // Fetch updated member with organization
     const updatedMember = await Member.findByPk(member.id, {
       include: [{ 
         model: Organization,
@@ -1446,9 +1722,7 @@ app.delete('/api/members/:id', async (req, res) => {
   }
 });
 
-// ==================== BULK OPERATIONS - FIXED ====================
-
-// Bulk Update Members
+// Bulk update members
 app.patch('/api/members/bulk', async (req, res) => {
   try {
     if (!Member || !sequelize || !Op) {
@@ -1465,7 +1739,6 @@ app.patch('/api/members/bulk', async (req, res) => {
       return res.status(400).json({ error: 'updates object is required' });
     }
 
-    // Validiere Update-Felder
     const allowedFields = ['status', 'phone', 'address'];
     const updateData = {};
     
@@ -1482,7 +1755,6 @@ app.patch('/api/members/bulk', async (req, res) => {
       });
     }
 
-    // Bulk Update durchführen
     const [affectedCount] = await Member.update(updateData, {
       where: {
         id: {
@@ -1508,7 +1780,7 @@ app.patch('/api/members/bulk', async (req, res) => {
   }
 });
 
-// Bulk Delete Members
+// Bulk delete members
 app.delete('/api/members/bulk', async (req, res) => {
   try {
     if (!Member || !sequelize || !Op) {
@@ -1521,14 +1793,12 @@ app.delete('/api/members/bulk', async (req, res) => {
       return res.status(400).json({ error: 'memberIds array is required' });
     }
 
-    // Sicherheitscheck: Maximal 50 Members auf einmal löschen
     if (memberIds.length > 50) {
       return res.status(400).json({ 
         error: 'Too many members for bulk deletion. Maximum 50 allowed.' 
       });
     }
 
-    // Members für Logging abrufen
     const membersToDelete = await Member.findAll({
       where: {
         id: {
@@ -1538,7 +1808,6 @@ app.delete('/api/members/bulk', async (req, res) => {
       attributes: ['id', 'firstName', 'lastName', 'memberNumber']
     });
 
-    // Bulk Delete durchführen
     const deletedCount = await Member.destroy({
       where: {
         id: {
@@ -1547,9 +1816,7 @@ app.delete('/api/members/bulk', async (req, res) => {
       }
     });
 
-    console.log(`✅ Bulk deleted ${deletedCount} members:`, 
-      membersToDelete.map(m => `${m.firstName} ${m.lastName} (${m.memberNumber})`).join(', ')
-    );
+    console.log(`✅ Bulk deleted ${deletedCount} members`);
 
     res.json({
       message: 'Bulk deletion successful',
@@ -1570,16 +1837,13 @@ app.delete('/api/members/bulk', async (req, res) => {
   }
 });
 
-// ==================== EXPORT ENDPOINTS - FIXED ====================
-
-// Export Members als CSV
+// Export members as CSV
 app.get('/api/members/export/csv', async (req, res) => {
   try {
     if (!Member || !Organization || !sequelize || !Op) {
       throw new Error('Models or operators not initialized');
     }
 
-    // Alle Members abrufen (oder mit Filtern)
     const { status, search } = req.query;
     
     const whereConditions = {};
@@ -1607,7 +1871,6 @@ app.get('/api/members/export/csv', async (req, res) => {
       order: [['firstName', 'ASC'], ['lastName', 'ASC']]
     });
 
-    // CSV Headers (abhängig von Organisation)
     const orgType = members[0]?.organization?.type || 'verein';
     const csvHeaders = [
       orgType === 'verein' ? 'Mitgliedsnummer' : 'Kundennummer',
@@ -1624,7 +1887,6 @@ app.get('/api/members/export/csv', async (req, res) => {
       'Erstellt am'
     ];
 
-    // CSV Daten erstellen
     const csvRows = members.map(member => [
       member.memberNumber || '',
       member.firstName || '',
@@ -1640,19 +1902,16 @@ app.get('/api/members/export/csv', async (req, res) => {
       new Date(member.created_at).toLocaleDateString('de-DE')
     ]);
 
-    // CSV String zusammenbauen
     const csvContent = [
       csvHeaders.join(','),
       ...csvRows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    // Response Headers für Download
     const fileName = `${orgType}_${new Date().toISOString().split('T')[0]}.csv`;
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     
-    // UTF-8 BOM für Excel-Kompatibilität
     res.write('\uFEFF');
     res.write(csvContent);
     res.end();
@@ -1668,9 +1927,7 @@ app.get('/api/members/export/csv', async (req, res) => {
   }
 });
 
-// ==================== SEARCH SUGGESTIONS - FIXED ====================
-
-// Autocomplete/Suggestions für Suche
+// Autocomplete suggestions
 app.get('/api/members/suggestions', async (req, res) => {
   try {
     if (!Member || !sequelize || !Op) {
@@ -1723,8 +1980,7 @@ app.get('/api/members/suggestions', async (req, res) => {
         });
         break;
 
-      default: // 'all'
-        // Gemischte Vorschläge aus verschiedenen Feldern
+      default:
         const [firstNames, lastNames, emails] = await Promise.all([
           Member.findAll({
             attributes: [[sequelize.fn('DISTINCT', sequelize.col('first_name')), 'value']],
@@ -1769,8 +2025,6 @@ app.get('/api/members/suggestions', async (req, res) => {
   }
 });
 
-// ==================== UTILITY ENDPOINTS ====================
-
 // Get organization types
 app.get('/api/organization-types', (req, res) => {
   res.json([
@@ -1803,7 +2057,17 @@ app.get('/api/debug/db-status', async (req, res) => {
       features: {
         ibanValidation: !!validateIBANWithLogging,
         ibanMiddleware: !!ibanValidationMiddleware,
-        sequelizeOp: !!Op
+        configValidation: !!validateMembershipConfig,
+        sequelizeOp: !!Op,
+        operators: {
+          or: !!Op?.or,
+          and: !!Op?.and,
+          iLike: !!Op?.iLike,
+          like: !!Op?.like,
+          gte: !!Op?.gte,
+          lte: !!Op?.lte,
+          in: !!Op?.in
+        }
       },
       connection: false,
       tables: {}
@@ -1814,7 +2078,6 @@ app.get('/api/debug/db-status', async (req, res) => {
         await sequelize.authenticate();
         status.connection = true;
 
-        // Check tables
         const [results] = await sequelize.query(`
           SELECT table_name 
           FROM information_schema.tables 
@@ -1838,21 +2101,21 @@ app.get('/api/debug/db-status', async (req, res) => {
   }
 });
 
-// IBAN Test Endpoint (Development only)
+// Development endpoints
 if (process.env.NODE_ENV === 'development') {
   app.get('/api/dev/test-iban', (req, res) => {
     const testIbans = [
-      'DE89370400440532013000', // Valid (Germany)
-      'DE12500105170648489890', // Valid (Germany)
-      'AT611904300234573201',   // Valid (Austria)
-      'CH9300762011623852957',  // Valid (Switzerland)
-      'FR1420041010050500013M02606', // Valid (France)
-      'DE89370400440532013999', // Invalid (wrong checksum)
-      'DE8937040044053201300',  // Invalid (wrong length)
-      'XX89370400440532013000', // Invalid (unknown country)
-      '',                       // Empty (allowed)
-      'INVALID',                // Invalid format
-      'DE89 3704 0044 0532 0130 00' // With spaces (should be cleaned)
+      'DE89370400440532013000',
+      'DE12500105170648489890',
+      'AT611904300234573201',
+      'CH9300762011623852957',
+      'FR1420041010050500013M02606',
+      'DE89370400440532013999',
+      'DE8937040044053201300',
+      'XX89370400440532013000',
+      '',
+      'INVALID',
+      'DE89 3704 0044 0532 0130 00'
     ];
 
     const results = testIbans.map(iban => ({
@@ -1869,7 +2132,6 @@ if (process.env.NODE_ENV === 'development') {
     });
   });
 
-  // Clear all data (development only)
   app.post('/api/dev/reset', async (req, res) => {
     try {
       if (!Member || !Organization) {
@@ -1895,8 +2157,6 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
-// ==================== ERROR HANDLERS ====================
-
 // 404 Handler
 app.use('*', (req, res) => {
   res.status(404).json({ 
@@ -1918,13 +2178,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==================== SERVER STARTUP ====================
+// Server startup
 async function startServer() {
   console.log('🏢 ====================================');
   console.log('🚀 OrgaSuite Backend Server Starting');
   console.log('🏢 ====================================');
   
-  // Initialize database first
   const dbInitialized = await initializeDatabase();
   
   if (!dbInitialized) {
@@ -1932,45 +2191,53 @@ async function startServer() {
     process.exit(1);
   }
 
-  // Start server
   app.listen(PORT, '0.0.0.0', () => {
     console.log('');
     console.log('✅ OrgaSuite Backend Server Started Successfully');
     console.log('🏢 ====================================');
     console.log(`📡 Server running on port ${PORT}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`🗄️ pgAdmin: http://localhost:8080`);
     console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
     console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
     console.log('');
-    console.log('🔧 ✅ COMPLETELY FIXED: Sequelize Op usage - all operators available globally');
-    console.log('📋 Available endpoints:');
-    console.log('🔧 GET  /api/health - Health check');
-    console.log('🐛 GET  /api/debug/db-status - Database status');
-    console.log('🏢 GET  /api/organization - Get organization');
-    console.log('🏢 POST /api/organization - Create/update organization (with IBAN validation)');
-    console.log('🎮 POST /api/setup-demo - Setup demo data (with validated IBANs)');
-    console.log('🏦 POST /api/validate-iban - Validate single IBAN');
-    console.log('📊 GET  /api/dashboard/stats - Dashboard statistics');
+    console.log('✅ FIXED: Sequelize Op operators imported at top level');
+    console.log('✅ Available operators:', Object.keys(Op || {}).join(', '));
+    console.log('✅ Configuration management integrated');
     console.log('');
-    console.log('👥 COMPLETELY FIXED MEMBERS API:');
-    console.log('📋 GET  /api/members - Enhanced with search, filter, sort, pagination (FIXED Op usage)');
-    console.log('📈 GET  /api/members/stats - Member statistics');
-    console.log('👤 GET  /api/members/:id - Get single member');
-    console.log('👤 POST /api/members - Create member (with IBAN validation)');
-    console.log('👤 PUT  /api/members/:id - Update member (with IBAN validation)');
-    console.log('👤 DELETE /api/members/:id - Delete member');
-    console.log('🔄 PATCH /api/members/bulk - Bulk update members');
-    console.log('🗑️ DELETE /api/members/bulk - Bulk delete members');
-    console.log('📄 GET  /api/members/export/csv - Export as CSV');
-    console.log('🔍 GET  /api/members/suggestions - Search suggestions');
+    console.log('📋 Available endpoints:');
+    console.log('  Health & Status:');
+    console.log('  - GET  /api/health');
+    console.log('  - GET  /api/debug/db-status');
+    console.log('');
+    console.log('  Organization:');
+    console.log('  - GET  /api/organization');
+    console.log('  - POST /api/organization');
+    console.log('  - POST /api/setup-demo');
+    console.log('  - POST /api/validate-iban');
+    console.log('');
+    console.log('  Configuration:');
+    console.log('  - GET  /api/organization/config');
+    console.log('  - PUT  /api/organization/config');
+    console.log('  - POST /api/organization/config/validate');
+    console.log('  - GET  /api/organization/member-statuses');
+    console.log('');
+    console.log('  Members:');
+    console.log('  - GET  /api/members (with search, filter, sort, pagination)');
+    console.log('  - GET  /api/members/stats');
+    console.log('  - GET  /api/members/:id');
+    console.log('  - POST /api/members');
+    console.log('  - PUT  /api/members/:id');
+    console.log('  - DELETE /api/members/:id');
+    console.log('  - PATCH /api/members/bulk');
+    console.log('  - DELETE /api/members/bulk');
+    console.log('  - GET  /api/members/export/csv');
+    console.log('  - GET  /api/members/suggestions');
     console.log('');
     console.log('🏢 ====================================');
-    console.log('');
   });
 }
 
-// Handle process termination gracefully
+// Handle process termination
 process.on('SIGTERM', async () => {
   console.log('🔄 SIGTERM received, shutting down gracefully...');
   if (sequelize) {
@@ -1987,7 +2254,7 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Start the server
+// Start server
 startServer().catch(error => {
   logError('SERVER_START', error);
   process.exit(1);
