@@ -24,16 +24,24 @@ const logError = (context, error) => {
   });
 };
 
-// ==================== DATABASE SETUP - FIXED OP USAGE ====================
-let sequelize, Organization, Member, Account, Transaction;
+// ==================== DATABASE SETUP - MINIMAL OP FIX ====================
+let sequelize, Organization, Member, Account, Transaction, Op;
 
 async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database connection...');
     console.log('🔗 DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
     
-    // Dynamic import to handle potential module issues
-    const { Sequelize, DataTypes, Op } = require('sequelize');
+    // ✅ MINIMAL FIX: Import and assign Op globally at module level
+    const { Sequelize, DataTypes, Op: SequelizeOp } = require('sequelize');
+    
+    // ✅ CRITICAL FIX: Assign Op to global variable IMMEDIATELY
+    Op = SequelizeOp;
+    
+    // ✅ VERIFY: Log Op availability
+    console.log('✅ Sequelize Op operators imported and assigned:', !!Op);
+    console.log('✅ Op.iLike available:', !!Op?.iLike);
+    console.log('✅ Op.or available:', !!Op?.or);
     
     // Create sequelize instance with enhanced error handling
     sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://orgasuite_user:orgasuite_password@localhost:5432/orgasuite', {
@@ -53,9 +61,14 @@ async function initializeDatabase() {
     // Test connection first
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connection established successfully');
+    
+    // ✅ ADDITIONAL VERIFICATION: Double-check Op is still available
+    if (!Op) {
+      console.error('❌ CRITICAL: Op operators lost after sequelize creation!');
+      Op = SequelizeOp; // Re-assign if lost
+    }
+    console.log('✅ Final Op verification - Available:', !!Op);
 
-    // ✅ FIXED: Make Op available globally by attaching to sequelize
-    sequelize.Op = Op;
 
     // Define models inline to avoid import issues
     Organization = sequelize.define('Organization', {
@@ -463,7 +476,8 @@ app.get('/api/health', async (req, res) => {
           Member: !!Member,
           Account: !!Account,
           Transaction: !!Transaction
-        }
+        },
+        sequelizeOp: !!Op
       }
     });
   } catch (error) {
@@ -912,17 +926,26 @@ app.get('/api/dashboard/stats', async (req, res) => {
   }
 });
 
-// ==================== ENHANCED MEMBERS CRUD WITH FIXED OP USAGE ====================
+// ==================== ENHANCED MEMBERS CRUD WITH COMPLETELY FIXED OP USAGE ====================
 
-// ✅ FIXED Enhanced GET /api/members endpoint mit korrekter Op-Verwendung
+// ✅ COMPLETELY FIXED Enhanced GET /api/members endpoint 
 app.get('/api/members', async (req, res) => {
   try {
-    if (!Member || !Organization || !sequelize) {
-      throw new Error('Models not initialized');
+    console.log('📊 Members API called with query:', req.query);
+
+    // ✅ VALIDATE MODELS AND OP AVAILABILITY FIRST
+    if (!Member || !Organization || !sequelize || !Op) {
+      const errorMsg = 'Models or operators not initialized';
+      console.error('❌ Models check failed:', { 
+        Member: !!Member, 
+        Organization: !!Organization, 
+        sequelize: !!sequelize, 
+        Op: !!Op 
+      });
+      throw new Error(errorMsg);
     }
 
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
+    console.log('✅ All models and operators available');
 
     // Query Parameters extrahieren
     const {
@@ -939,7 +962,7 @@ app.get('/api/members', async (req, res) => {
       phone = ''
     } = req.query;
 
-    console.log('📊 Members API called with params:', { 
+    console.log('📊 Parsed parameters:', { 
       page, limit, sortBy, sortOrder, search, status, memberNumber, firstName, lastName, email, phone 
     });
 
@@ -953,6 +976,7 @@ app.get('/api/members', async (req, res) => {
     // Status Filter
     if (status && ['active', 'inactive', 'suspended'].includes(status)) {
       whereConditions.status = status;
+      console.log('✅ Status filter applied:', status);
     }
 
     // Spezifische Feld-Filter
@@ -960,45 +984,57 @@ app.get('/api/members', async (req, res) => {
       whereConditions.memberNumber = {
         [Op.iLike]: `%${memberNumber}%`
       };
+      console.log('✅ MemberNumber filter applied:', memberNumber);
     }
 
     if (firstName) {
       whereConditions.firstName = {
         [Op.iLike]: `%${firstName}%`
       };
+      console.log('✅ FirstName filter applied:', firstName);
     }
 
     if (lastName) {
       whereConditions.lastName = {
         [Op.iLike]: `%${lastName}%`
       };
+      console.log('✅ LastName filter applied:', lastName);
     }
 
     if (email) {
       whereConditions.email = {
         [Op.iLike]: `%${email}%`
       };
+      console.log('✅ Email filter applied:', email);
     }
 
     if (phone) {
       whereConditions.phone = {
         [Op.iLike]: `%${phone}%`
       };
+      console.log('✅ Phone filter applied:', phone);
     }
 
-    // Full-text Search Condition
+    // ✅ FIXED: Full-text Search Condition with proper Op usage
     let searchCondition = {};
     if (search) {
-      searchCondition = {
-        [Op.or]: [
-          { firstName: { [Op.iLike]: `%${search}%` } },
-          { lastName: { [Op.iLike]: `%${search}%` } },
-          { email: { [Op.iLike]: `%${search}%` } },
-          { memberNumber: { [Op.iLike]: `%${search}%` } },
-          { phone: { [Op.iLike]: `%${search}%` } },
-          { status: { [Op.iLike]: `%${search}%` } }
-        ]
-      };
+      console.log('🔍 Applying search condition for:', search);
+      try {
+        searchCondition = {
+          [Op.or]: [
+            { firstName: { [Op.iLike]: `%${search}%` } },
+            { lastName: { [Op.iLike]: `%${search}%` } },
+            { email: { [Op.iLike]: `%${search}%` } },
+            { memberNumber: { [Op.iLike]: `%${search}%` } },
+            { phone: { [Op.iLike]: `%${search}%` } },
+            { status: { [Op.iLike]: `%${search}%` } }
+          ]
+        };
+        console.log('✅ Search condition created successfully');
+      } catch (searchError) {
+        console.error('❌ Error creating search condition:', searchError);
+        throw new Error(`Search condition error: ${searchError.message}`);
+      }
     }
 
     // Kombiniere Where Conditions
@@ -1014,6 +1050,8 @@ app.get('/api/members', async (req, res) => {
     const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
     const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
+    console.log('📊 Sorting:', { field: validSortField, order: validSortOrder });
+
     // Spezielle Sortierung für zusammengesetzte Felder
     let orderClause;
     if (sortBy === 'name') {
@@ -1025,19 +1063,31 @@ app.get('/api/members', async (req, res) => {
       orderClause = [[validSortField, validSortOrder]];
     }
 
-    // Haupt-Query mit Pagination
-    const { count, rows: members } = await Member.findAndCountAll({
-      where: finalWhereCondition,
-      include: [{ 
-        model: Organization,
-        as: 'organization',
-        attributes: ['id', 'name', 'type']
-      }],
-      order: orderClause,
-      limit: pageLimit,
-      offset: offset,
-      distinct: true // Wichtig für korrekte count bei includes
-    });
+    console.log('📊 Order clause:', orderClause);
+
+    // ✅ ENHANCED: Haupt-Query mit verbesserter Fehlerbehandlung
+    let queryResult;
+    try {
+      console.log('🔍 Executing main query...');
+      queryResult = await Member.findAndCountAll({
+        where: finalWhereCondition,
+        include: [{ 
+          model: Organization,
+          as: 'organization',
+          attributes: ['id', 'name', 'type']
+        }],
+        order: orderClause,
+        limit: pageLimit,
+        offset: offset,
+        distinct: true // Wichtig für korrekte count bei includes
+      });
+      console.log('✅ Query executed successfully');
+    } catch (queryError) {
+      console.error('❌ Database query error:', queryError);
+      throw new Error(`Database query failed: ${queryError.message}`);
+    }
+
+    const { count, rows: members } = queryResult;
 
     // Pagination Metadaten
     const totalPages = Math.ceil(count / pageLimit);
@@ -1046,7 +1096,8 @@ app.get('/api/members', async (req, res) => {
 
     console.log(`✅ Retrieved ${members.length} of ${count} members (Page ${page}/${totalPages})`);
 
-    res.json({
+    // ✅ ENHANCED: Response mit verbesserter Struktur
+    const response = {
       members,
       pagination: {
         currentPage: parseInt(page),
@@ -1068,22 +1119,35 @@ app.get('/api/members', async (req, res) => {
       sorting: {
         sortBy: validSortField,
         sortOrder: validSortOrder
-      }
-    });
+      },
+      timestamp: new Date().toISOString(),
+      success: true
+    };
+
+    console.log('✅ Sending successful response');
+    res.json(response);
 
   } catch (error) {
     logError('GET_MEMBERS_ENHANCED', error);
     
     // More detailed error logging for debugging
-    console.error('Enhanced Members API Error Details:', {
+    console.error('❌ Enhanced Members API Error Details:', {
       query: req.query,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      modelsAvailable: {
+        Member: !!Member,
+        Organization: !!Organization,
+        sequelize: !!sequelize,
+        Op: !!Op
+      }
     });
     
     res.status(500).json({ 
       error: 'Failed to fetch members',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      timestamp: new Date().toISOString(),
+      success: false
     });
   }
 });
@@ -1091,12 +1155,9 @@ app.get('/api/members', async (req, res) => {
 // ==================== MEMBER STATISTICS ENDPOINT - FIXED ====================
 app.get('/api/members/stats', async (req, res) => {
   try {
-    if (!Member || !sequelize) {
-      throw new Error('Member model not initialized');
+    if (!Member || !sequelize || !Op) {
+      throw new Error('Member model or operators not initialized');
     }
-
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
 
     // Grundlegende Statistiken
     const [total, active, inactive, suspended] = await Promise.all([
@@ -1390,12 +1451,9 @@ app.delete('/api/members/:id', async (req, res) => {
 // Bulk Update Members
 app.patch('/api/members/bulk', async (req, res) => {
   try {
-    if (!Member || !sequelize) {
-      throw new Error('Member model not initialized');
+    if (!Member || !sequelize || !Op) {
+      throw new Error('Member model or operators not initialized');
     }
-
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
 
     const { memberIds, updates } = req.body;
 
@@ -1453,12 +1511,9 @@ app.patch('/api/members/bulk', async (req, res) => {
 // Bulk Delete Members
 app.delete('/api/members/bulk', async (req, res) => {
   try {
-    if (!Member || !sequelize) {
-      throw new Error('Member model not initialized');
+    if (!Member || !sequelize || !Op) {
+      throw new Error('Member model or operators not initialized');
     }
-
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
 
     const { memberIds } = req.body;
 
@@ -1520,12 +1575,9 @@ app.delete('/api/members/bulk', async (req, res) => {
 // Export Members als CSV
 app.get('/api/members/export/csv', async (req, res) => {
   try {
-    if (!Member || !Organization || !sequelize) {
-      throw new Error('Models not initialized');
+    if (!Member || !Organization || !sequelize || !Op) {
+      throw new Error('Models or operators not initialized');
     }
-
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
 
     // Alle Members abrufen (oder mit Filtern)
     const { status, search } = req.query;
@@ -1621,12 +1673,9 @@ app.get('/api/members/export/csv', async (req, res) => {
 // Autocomplete/Suggestions für Suche
 app.get('/api/members/suggestions', async (req, res) => {
   try {
-    if (!Member || !sequelize) {
-      throw new Error('Member model not initialized');
+    if (!Member || !sequelize || !Op) {
+      throw new Error('Member model or operators not initialized');
     }
-
-    // ✅ FIXED: Use sequelize.Op instead of Op
-    const Op = sequelize.Op;
 
     const { q: query, field = 'all', limit = 10 } = req.query;
 
@@ -1753,7 +1802,8 @@ app.get('/api/debug/db-status', async (req, res) => {
       },
       features: {
         ibanValidation: !!validateIBANWithLogging,
-        ibanMiddleware: !!ibanValidationMiddleware
+        ibanMiddleware: !!ibanValidationMiddleware,
+        sequelizeOp: !!Op
       },
       connection: false,
       tables: {}
@@ -1893,7 +1943,7 @@ async function startServer() {
     console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
     console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
     console.log('');
-    console.log('🔧 ✅ FIXED: Sequelize Op usage corrected in all routes');
+    console.log('🔧 ✅ COMPLETELY FIXED: Sequelize Op usage - all operators available globally');
     console.log('📋 Available endpoints:');
     console.log('🔧 GET  /api/health - Health check');
     console.log('🐛 GET  /api/debug/db-status - Database status');
@@ -1903,8 +1953,8 @@ async function startServer() {
     console.log('🏦 POST /api/validate-iban - Validate single IBAN');
     console.log('📊 GET  /api/dashboard/stats - Dashboard statistics');
     console.log('');
-    console.log('👥 ENHANCED MEMBERS API (FIXED):');
-    console.log('📋 GET  /api/members - Enhanced with search, filter, sort, pagination');
+    console.log('👥 COMPLETELY FIXED MEMBERS API:');
+    console.log('📋 GET  /api/members - Enhanced with search, filter, sort, pagination (FIXED Op usage)');
     console.log('📈 GET  /api/members/stats - Member statistics');
     console.log('👤 GET  /api/members/:id - Get single member');
     console.log('👤 POST /api/members - Create member (with IBAN validation)');
