@@ -1,4 +1,4 @@
-// backend/server.js - COMPLETE VERSION with Enhanced Members API
+// backend/server.js - FIXED VERSION with proper Sequelize Op usage
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -24,7 +24,7 @@ const logError = (context, error) => {
   });
 };
 
-// ==================== DATABASE SETUP WITH ENHANCED ERROR HANDLING ====================
+// ==================== DATABASE SETUP - FIXED OP USAGE ====================
 let sequelize, Organization, Member, Account, Transaction;
 
 async function initializeDatabase() {
@@ -54,7 +54,7 @@ async function initializeDatabase() {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connection established successfully');
 
-    // Make Op available globally for use in routes
+    // ✅ FIXED: Make Op available globally by attaching to sequelize
     sequelize.Op = Op;
 
     // Define models inline to avoid import issues
@@ -912,14 +912,17 @@ app.get('/api/dashboard/stats', async (req, res) => {
   }
 });
 
-// ==================== ENHANCED MEMBERS CRUD WITH FILTERING ====================
+// ==================== ENHANCED MEMBERS CRUD WITH FIXED OP USAGE ====================
 
-// Enhanced GET /api/members endpoint mit Query-Parameter Support
+// ✅ FIXED Enhanced GET /api/members endpoint mit korrekter Op-Verwendung
 app.get('/api/members', async (req, res) => {
   try {
-    if (!Member || !Organization) {
+    if (!Member || !Organization || !sequelize) {
       throw new Error('Models not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     // Query Parameters extrahieren
     const {
@@ -935,6 +938,10 @@ app.get('/api/members', async (req, res) => {
       email = '',
       phone = ''
     } = req.query;
+
+    console.log('📊 Members API called with params:', { 
+      page, limit, sortBy, sortOrder, search, status, memberNumber, firstName, lastName, email, phone 
+    });
 
     // Pagination Setup
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -999,6 +1006,8 @@ app.get('/api/members', async (req, res) => {
       ...whereConditions,
       ...searchCondition
     };
+
+    console.log('🔍 Final where condition:', JSON.stringify(finalWhereCondition, null, 2));
 
     // Sortierung validieren und aufbauen
     const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt'];
@@ -1079,12 +1088,15 @@ app.get('/api/members', async (req, res) => {
   }
 });
 
-// ==================== MEMBER STATISTICS ENDPOINT ====================
+// ==================== MEMBER STATISTICS ENDPOINT - FIXED ====================
 app.get('/api/members/stats', async (req, res) => {
   try {
-    if (!Member) {
+    if (!Member || !sequelize) {
       throw new Error('Member model not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     // Grundlegende Statistiken
     const [total, active, inactive, suspended] = await Promise.all([
@@ -1373,14 +1385,17 @@ app.delete('/api/members/:id', async (req, res) => {
   }
 });
 
-// ==================== BULK OPERATIONS ====================
+// ==================== BULK OPERATIONS - FIXED ====================
 
 // Bulk Update Members
 app.patch('/api/members/bulk', async (req, res) => {
   try {
-    if (!Member) {
+    if (!Member || !sequelize) {
       throw new Error('Member model not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     const { memberIds, updates } = req.body;
 
@@ -1438,9 +1453,12 @@ app.patch('/api/members/bulk', async (req, res) => {
 // Bulk Delete Members
 app.delete('/api/members/bulk', async (req, res) => {
   try {
-    if (!Member) {
+    if (!Member || !sequelize) {
       throw new Error('Member model not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     const { memberIds } = req.body;
 
@@ -1497,14 +1515,17 @@ app.delete('/api/members/bulk', async (req, res) => {
   }
 });
 
-// ==================== EXPORT ENDPOINTS ====================
+// ==================== EXPORT ENDPOINTS - FIXED ====================
 
 // Export Members als CSV
 app.get('/api/members/export/csv', async (req, res) => {
   try {
-    if (!Member || !Organization) {
+    if (!Member || !Organization || !sequelize) {
       throw new Error('Models not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     // Alle Members abrufen (oder mit Filtern)
     const { status, search } = req.query;
@@ -1595,14 +1616,17 @@ app.get('/api/members/export/csv', async (req, res) => {
   }
 });
 
-// ==================== SEARCH SUGGESTIONS ====================
+// ==================== SEARCH SUGGESTIONS - FIXED ====================
 
 // Autocomplete/Suggestions für Suche
 app.get('/api/members/suggestions', async (req, res) => {
   try {
-    if (!Member) {
+    if (!Member || !sequelize) {
       throw new Error('Member model not initialized');
     }
+
+    // ✅ FIXED: Use sequelize.Op instead of Op
+    const Op = sequelize.Op;
 
     const { q: query, field = 'all', limit = 10 } = req.query;
 
@@ -1869,6 +1893,7 @@ async function startServer() {
     console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
     console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
     console.log('');
+    console.log('🔧 ✅ FIXED: Sequelize Op usage corrected in all routes');
     console.log('📋 Available endpoints:');
     console.log('🔧 GET  /api/health - Health check');
     console.log('🐛 GET  /api/debug/db-status - Database status');
@@ -1878,7 +1903,7 @@ async function startServer() {
     console.log('🏦 POST /api/validate-iban - Validate single IBAN');
     console.log('📊 GET  /api/dashboard/stats - Dashboard statistics');
     console.log('');
-    console.log('👥 ENHANCED MEMBERS API:');
+    console.log('👥 ENHANCED MEMBERS API (FIXED):');
     console.log('📋 GET  /api/members - Enhanced with search, filter, sort, pagination');
     console.log('📈 GET  /api/members/stats - Member statistics');
     console.log('👤 GET  /api/members/:id - Get single member');
@@ -1890,28 +1915,6 @@ async function startServer() {
     console.log('📄 GET  /api/members/export/csv - Export as CSV');
     console.log('🔍 GET  /api/members/suggestions - Search suggestions');
     console.log('');
-    console.log('🔧 UTILITY ENDPOINTS:');
-    console.log('📋 GET  /api/organization-types - Get organization types');
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🧪 GET  /api/dev/test-iban - Test IBAN validation (dev only)');
-      console.log('🧹 POST /api/dev/reset - Reset database (dev only)');
-    }
-    console.log('');
-    console.log('🏦 IBAN Validation Features:');
-    console.log('✅ 70+ countries supported');
-    console.log('✅ Full mod97 checksum validation');
-    console.log('✅ Automatic formatting and BLZ extraction');
-    console.log('✅ Organization and Member IBAN support');
-    console.log('✅ Comprehensive error messages');
-    console.log('');
-    console.log('📊 Enhanced Members Features:');
-    console.log('🔍 Server-side search and filtering');
-    console.log('📄 Pagination with configurable page sizes');
-    console.log('📈 Advanced sorting on all columns');
-    console.log('📊 Member statistics and analytics');
-    console.log('🔄 Bulk operations (update/delete)');
-    console.log('📄 CSV export with filtering');
-    console.log('💡 Search suggestions and autocomplete');
     console.log('🏢 ====================================');
     console.log('');
   });
