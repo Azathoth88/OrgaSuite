@@ -23,9 +23,9 @@ const ConfigurationView = () => {
           description: 'Vollwertige Mitgliedschaft mit allen Rechten',
           billing: {
             fee: 50.00,
-            frequency: 'yearly', // yearly, monthly, quarterly, custom
-            dueDay: 1, // Tag im Monat/Quartal/Jahr
-            active: true // Ob für diesen Status Beiträge erhoben werden
+            frequency: 'yearly',
+            dueDay: 1,
+            active: true
           }
         },
         { 
@@ -37,7 +37,7 @@ const ConfigurationView = () => {
             fee: 0.00,
             frequency: 'yearly',
             dueDay: 1,
-            active: false // Keine Beiträge für inaktive Mitglieder
+            active: false
           }
         },
         { 
@@ -49,7 +49,7 @@ const ConfigurationView = () => {
             fee: 0.00,
             frequency: 'yearly',
             dueDay: 1,
-            active: false // Keine Beiträge für gesperrte Mitglieder
+            active: false
           }
         }
       ],
@@ -193,7 +193,7 @@ const ConfigurationView = () => {
     }));
   };
 
-  // Tab-Definitionen (ohne Billing-Tab)
+  // Tab-Definitionen
   const tabs = [
     {
       id: 'membership',
@@ -217,14 +217,6 @@ const ConfigurationView = () => {
     { value: 'red', label: 'Rot', class: 'bg-red-100 text-red-800' },
     { value: 'gray', label: 'Grau', class: 'bg-gray-100 text-gray-800' },
     { value: 'purple', label: 'Lila', class: 'bg-purple-100 text-purple-800' }
-  ];
-
-  // Frequenz-Optionen
-  const frequencyOptions = [
-    { value: 'monthly', label: 'Monatlich', description: 'Jeden Monat' },
-    { value: 'quarterly', label: 'Quartalsweise', description: 'Alle 3 Monate' },
-    { value: 'yearly', label: 'Jährlich', description: 'Einmal pro Jahr' },
-    { value: 'custom', label: 'Benutzerdefiniert', description: 'Individueller Zeitraum' }
   ];
 
   if (!organization) {
@@ -427,192 +419,137 @@ const ConfigurationView = () => {
                           placeholder="Beschreibung des Status (optional)"
                         />
                       </div>
+
+                      {/* Billing-Konfiguration für diesen Status */}
+                      <div className="mt-4 p-3 bg-white border border-gray-200 rounded">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                          Beitrags- und Abrechnungseinstellungen
+                        </h4>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={status.billing?.active || false}
+                                onChange={(e) => updateStatusBilling(index, 'active', e.target.checked)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">Beiträge erheben</span>
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1 ml-6">
+                              Wenn deaktiviert, werden keine Beiträge berechnet
+                            </p>
+                          </div>
+                          
+                          {status.billing?.active && (
+                            <>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Beitragshöhe
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={status.billing?.fee || 0}
+                                    onChange={(e) => updateStatusBilling(index, 'fee', e.target.value)}
+                                    className="w-full p-2 pr-12 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                    placeholder="50.00"
+                                  />
+                                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                    <span className="text-gray-500 text-sm">
+                                      {config.membershipConfig.defaultCurrency || 'EUR'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Abrechnungsturnus
+                                </label>
+                                <select
+                                  value={status.billing?.frequency || 'yearly'}
+                                  onChange={(e) => updateStatusBilling(index, 'frequency', e.target.value)}
+                                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="monthly">Monatlich</option>
+                                  <option value="quarterly">Quartalsweise</option>
+                                  <option value="yearly">Jährlich</option>
+                                  <option value="custom">Benutzerdefiniert</option>
+                                </select>
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Fälligkeitstag
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="31"
+                                  value={status.billing?.dueDay || 1}
+                                  onChange={(e) => updateStatusBilling(index, 'dueDay', parseInt(e.target.value) || 1)}
+                                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                  placeholder="1"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {status.billing?.frequency === 'monthly' && 'Tag im Monat (1-31)'}
+                                  {status.billing?.frequency === 'quarterly' && 'Tag im Quartal (1-31)'}
+                                  {status.billing?.frequency === 'yearly' && 'Tag im Jahr (1-365)'}
+                                </p>
+                              </div>
+                              
+                              <div className="md:col-span-2">
+                                <div className="bg-blue-50 p-2 rounded text-xs">
+                                  <strong>Vorschau:</strong> Mitglieder mit Status "{status.label}" 
+                                  zahlen {status.billing?.fee || 0} {config.membershipConfig.defaultCurrency || 'EUR'} 
+                                  {' '}
+                                  {status.billing?.frequency === 'monthly' && 'monatlich'}
+                                  {status.billing?.frequency === 'quarterly' && 'quartalsweise'}
+                                  {status.billing?.frequency === 'yearly' && 'jährlich'}
+                                  {' '}am {status.billing?.dueDay || 1}. des Zeitraums.
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          
+                          {!status.billing?.active && (
+                            <div className="md:col-span-2">
+                              <div className="bg-gray-50 p-2 rounded text-xs text-gray-600">
+                                <strong>Info:</strong> Für diesen Status werden keine automatischen Beiträge erhoben.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Standard-Mitgliedsbeitrag */}
+              {/* Standard-Währung */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                  Standard-Mitgliedsbeitrag
+                  Standard-Währung
                 </h3>
                 
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Betrag
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={config.membershipConfig.fees.defaultAmount}
-                          onChange={(e) => updateFeeConfig('defaultAmount', parseFloat(e.target.value) || 0)}
-                          className="w-full p-2 pr-12 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                          placeholder="50.00"
-                        />
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          <span className="text-gray-500 text-sm">EUR</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Währung
-                      </label>
-                      <select
-                        value={config.membershipConfig.fees.currency}
-                        onChange={(e) => updateFeeConfig('currency', e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="EUR">Euro (€)</option>
-                        <option value="USD">US-Dollar ($)</option>
-                        <option value="CHF">Schweizer Franken (CHF)</option>
-                        <option value="GBP">Britisches Pfund (£)</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Kulanzzeit (Tage)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="365"
-                        value={config.membershipConfig.fees.billing.gracePeriod}
-                        onChange={(e) => updateBillingConfig('gracePeriod', parseInt(e.target.value) || 0)}
-                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                        placeholder="30"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Abrechnung Tab */}
-          {activeTab === 'billing' && (
-            <div className="space-y-8">
-              {/* Abrechnungsfrequenz */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                  Abrechnungszyklus
-                </h3>
-                
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Abrechnungsfrequenz
-                      </label>
-                      <div className="space-y-2">
-                        {frequencyOptions.map(option => (
-                          <label key={option.value} className="flex items-center p-3 border rounded-lg hover:bg-white cursor-pointer">
-                            <input
-                              type="radio"
-                              name="frequency"
-                              value={option.value}
-                              checked={config.membershipConfig.fees.billing.frequency === option.value}
-                              onChange={(e) => updateBillingConfig('frequency', e.target.value)}
-                              className="text-blue-600 focus:ring-blue-500 mr-3"
-                            />
-                            <div>
-                              <div className="font-medium text-gray-900">{option.label}</div>
-                              <div className="text-sm text-gray-600">{option.description}</div>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Fälligkeitstag
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={config.membershipConfig.fees.billing.dueDay}
-                        onChange={(e) => updateBillingConfig('dueDay', parseInt(e.target.value) || 1)}
-                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                        placeholder="1"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {config.membershipConfig.fees.billing.frequency === 'monthly' && 'Tag im Monat (1-31)'}
-                        {config.membershipConfig.fees.billing.frequency === 'quarterly' && 'Tag im ersten Quartalsmonat (1-31)'}
-                        {config.membershipConfig.fees.billing.frequency === 'yearly' && 'Tag im Jahr (1-365)'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Mahnungen */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                  Erinnerungen und Mahnungen
-                </h3>
-                
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Erinnerungen (Tage vor Fälligkeit)
-                    </label>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {config.membershipConfig.fees.billing.reminderDays.map((days, index) => (
-                        <div key={index}>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            {index === 0 ? 'Erste Erinnerung' : index === 1 ? 'Zweite Erinnerung' : `${index + 1}. Erinnerung`}
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              max="365"
-                              value={days}
-                              onChange={(e) => updateReminderDays(index, e.target.value)}
-                              className="w-full p-2 pr-12 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                              placeholder="30"
-                            />
-                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 text-xs">Tage</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    
-                    <div className="mt-4 flex space-x-2">
-                      <button
-                        onClick={() => {
-                          const newReminderDays = [...config.membershipConfig.fees.billing.reminderDays, 0];
-                          updateBillingConfig('reminderDays', newReminderDays);
-                        }}
-                        className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-                      >
-                        ➕ Erinnerung hinzufügen
-                      </button>
-                      
-                      {config.membershipConfig.fees.billing.reminderDays.length > 1 && (
-                        <button
-                          onClick={() => {
-                            const newReminderDays = config.membershipConfig.fees.billing.reminderDays.slice(0, -1);
-                            updateBillingConfig('reminderDays', newReminderDays);
-                          }}
-                          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                        >
-                          ➖ Letzte entfernen
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Währung für alle Beiträge
+                  </label>
+                  <select
+                    value={config.membershipConfig.defaultCurrency}
+                    onChange={(e) => updateDefaultCurrency(e.target.value)}
+                    className="w-full max-w-md p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="EUR">Euro (€)</option>
+                    <option value="USD">US-Dollar ($)</option>
+                    <option value="CHF">Schweizer Franken (CHF)</option>
+                    <option value="GBP">Britisches Pfund (£)</option>
+                  </select>
                 </div>
               </div>
             </div>
