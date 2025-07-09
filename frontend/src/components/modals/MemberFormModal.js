@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
-import { useIBANValidation, formatIBAN } from '../../utils/ibanUtils';
+import { useIBANValidation } from '../../utils/ibanUtils';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -17,6 +17,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     email: '',
     phone: '',
     status: 'active',
+    memberNumber: '', // Will be auto-generated if empty
     address: {
       street: '',
       city: '',
@@ -52,33 +53,45 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   // Load member data in edit mode
   useEffect(() => {
     if (isEditMode && member) {
+      // Ensure membershipData and bankDetails exist
+      const membershipData = member.membershipData || {
+        joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
+        membershipType: organization?.type === 'verein' ? 'Vollmitglied' : 'Standard',
+        membershipFee: 50.00,
+        paymentMethod: 'Überweisung',
+        bankDetails: {
+          accountHolder: '',
+          iban: ''
+        }
+      };
+
+      // Ensure bankDetails exists within membershipData
+      if (!membershipData.bankDetails) {
+        membershipData.bankDetails = {
+          accountHolder: '',
+          iban: ''
+        };
+      }
+
       setFormData({
         firstName: member.firstName || '',
         lastName: member.lastName || '',
         email: member.email || '',
         phone: member.phone || '',
         status: member.status || 'active',
+        memberNumber: member.memberNumber || '',
         address: member.address || {
           street: '',
           city: '',
           zip: '',
           country: 'Deutschland'
         },
-        membershipData: member.membershipData || {
-          joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
-          membershipType: organization?.type === 'verein' ? 'Vollmitglied' : 'Standard',
-          membershipFee: 50.00,
-          paymentMethod: 'Überweisung',
-          bankDetails: {
-            accountHolder: '',
-            iban: ''
-          }
-        }
+        membershipData: membershipData
       });
       
       // Set IBAN if exists
-      if (member.membershipData?.bankDetails?.iban) {
-        handleIbanChange(member.membershipData.bankDetails.iban);
+      if (membershipData.bankDetails?.iban) {
+        handleIbanChange(membershipData.bankDetails.iban);
       }
     }
   }, [member, isEditMode, organization]);
@@ -94,6 +107,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           email: '',
           phone: '',
           status: 'active',
+          memberNumber: '',
           address: {
             street: '',
             city: '',
@@ -129,9 +143,8 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       errors.lastName = t('validation.required', 'Pflichtfeld');
     }
     
-    if (!formData.email.trim()) {
-      errors.email = t('validation.required', 'Pflichtfeld');
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    // E-Mail is optional, but if provided, must be valid
+    if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = t('validation.invalidEmail', 'Ungültige E-Mail-Adresse');
     }
     
@@ -157,12 +170,18 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     try {
       // Prepare data for submission
       const submitData = {
-        ...formData,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email || undefined, // Send undefined if empty to let backend handle
+        phone: formData.phone || undefined,
+        status: formData.status,
+        memberNumber: formData.memberNumber || undefined, // Only send if provided
+        address: formData.address,
         membershipData: {
           ...formData.membershipData,
-          bankDetails: iban ? {
-            ...formData.membershipData.bankDetails,
-            iban: iban // Use the raw IBAN value
+          bankDetails: (iban || formData.membershipData.bankDetails.accountHolder) ? {
+            accountHolder: formData.membershipData.bankDetails.accountHolder || '',
+            iban: iban || ''
           } : undefined
         }
       };
@@ -192,18 +211,89 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         // Handle specific field errors
         if (error.response.data.field) {
           const field = error.response.data.field;
-          if (field === 'membershipData.bankDetails.iban') {
-            setFieldErrors(prev => ({ ...prev, iban: errorMessage }));
+          
+          // Map backend field names to form field names
+          switch(field) {
+            case 'email':
+              setFieldErrors(prev => ({ 
+                ...prev, 
+                email: errorMessage 
+              }));
+              // Scroll to email field
+              setTimeout(() => {
+                const emailInput = document.querySelector('input[type="email"]');
+                if (emailInput) {
+                  emailInput.focus();
+                  emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 100);
+              break;
+              
+            case 'memberNumber':
+              setFieldErrors(prev => ({ 
+                ...prev, 
+                memberNumber: errorMessage 
+              }));
+              break;
+              
+            case 'membershipData.bankDetails.iban':
+              setFieldErrors(prev => ({ 
+                ...prev, 
+                iban: errorMessage 
+              }));
+              break;
+              
+            default:
+              // Generic field error
+              setFieldErrors(prev => ({ 
+                ...prev, 
+                [field]: errorMessage 
+              }));
           }
         }
         
-        // Handle validation errors
-        if (error.response.data.details && Array.isArray(error.response.data.details)) {
-          errorMessage = error.response.data.details.join(', ');
+        // Handle validation errors array
+        if (error.response.data.details) {
+          if (Array.isArray(error.response.data.details)) {
+            errorMessage = error.response.data.details.join(', ');
+          } else if (typeof error.response.data.details === 'string') {
+            errorMessage = error.response.data.details;
+          }
         }
+        
+        // Handle specific HTTP status codes
+        if (error.response.status === 400) {
+          // Bad Request - show user-friendly message
+          if (!error.response.data.field) {
+            // General validation error
+            errorMessage = errorMessage || t('validation.checkFields', 'Bitte überprüfen Sie Ihre Eingaben');
+          }
+        } else if (error.response.status === 409) {
+          // Conflict - duplicate entry
+          errorMessage = t('validation.duplicateEntry', 'Ein Eintrag mit diesen Daten existiert bereits');
+        } else if (error.response.status === 500) {
+          // Server error
+          errorMessage = t('common.serverError', 'Serverfehler. Bitte versuchen Sie es später erneut.');
+        }
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = t('common.networkError', 'Netzwerkfehler. Bitte prüfen Sie Ihre Internetverbindung.');
+      } else {
+        // Something else happened
+        errorMessage = error.message || t('common.unknownError', 'Ein unbekannter Fehler ist aufgetreten');
       }
       
       setError(errorMessage);
+      
+      // Log detailed error for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Detailed error:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+          headers: error.response?.headers
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -289,19 +379,40 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('common.email', 'E-Mail')} *
+                    {t('common.email', 'E-Mail')}
+                    <span className="text-xs text-gray-500 ml-2">({t('common.optional', 'optional')})</span>
                   </label>
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, email: e.target.value });
+                      // Clear error when user starts typing
+                      if (fieldErrors.email) {
+                        setFieldErrors(prev => ({ ...prev, email: null }));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // Validate email on blur only if not empty
+                      const email = e.target.value.trim();
+                      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        setFieldErrors(prev => ({ 
+                          ...prev, 
+                          email: t('validation.invalidEmail', 'Ungültige E-Mail-Adresse') 
+                        }));
+                      }
+                    }}
                     className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      fieldErrors.email ? 'border-red-300' : 'border-gray-300'
+                      fieldErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                     }`}
+                    placeholder="beispiel@email.de"
                     disabled={loading}
                   />
                   {fieldErrors.email && (
-                    <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
+                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      {fieldErrors.email}
+                    </p>
                   )}
                 </div>
 
@@ -352,6 +463,48 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                     disabled={loading}
                   />
                 </div>
+
+                {isEditMode ? (
+                  // Show member number as read-only in edit mode
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('members.memberNumber', 'Mitgliedsnummer')}
+                    </label>
+                    <div className="w-full p-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                      {member?.memberNumber || '-'}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('members.memberNumber', 'Mitgliedsnummer')}
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({t('common.optional', 'optional')} - {t('members.autoGenerated', 'wird automatisch generiert')})
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.memberNumber || ''}
+                      onChange={(e) => {
+                        setFormData({ ...formData, memberNumber: e.target.value });
+                        if (fieldErrors.memberNumber) {
+                          setFieldErrors(prev => ({ ...prev, memberNumber: null }));
+                        }
+                      }}
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                        fieldErrors.memberNumber ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                      placeholder={organization?.type === 'verein' ? 'z.B. M001' : 'z.B. K001'}
+                      disabled={loading}
+                    />
+                    {fieldErrors.memberNumber && (
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <span className="mr-1">⚠️</span>
+                        {fieldErrors.memberNumber}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -509,7 +662,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                   </label>
                   <input
                     type="text"
-                    value={formData.membershipData.bankDetails.accountHolder}
+                    value={formData.membershipData.bankDetails?.accountHolder || ''}
                     onChange={(e) => setFormData({
                       ...formData,
                       membershipData: {

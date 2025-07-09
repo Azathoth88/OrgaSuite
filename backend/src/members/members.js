@@ -19,13 +19,11 @@ function defineMemberModel(sequelize) {
     },
     memberNumber: {
       type: DataTypes.STRING,
-      unique: true,
       field: 'member_number'
     },
     email: {
       type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
+      allowNull: true, // Email is now optional
       validate: {
         isEmail: true
       }
@@ -72,7 +70,21 @@ function defineMemberModel(sequelize) {
     tableName: 'members',
     timestamps: true,
     createdAt: 'created_at',
-    updatedAt: 'updated_at'
+    updatedAt: 'updated_at',
+    // Compound unique constraints
+    indexes: [
+      {
+        unique: true,
+        fields: ['email', 'organization_id'],
+        name: 'unique_email_per_org'
+        // Note: Partial index for null emails is handled in migration
+      },
+      {
+        unique: true,
+        fields: ['member_number', 'organization_id'],
+        name: 'unique_member_number_per_org'
+      }
+    ]
   });
 
   return Member;
@@ -81,24 +93,42 @@ function defineMemberModel(sequelize) {
 // Setup Hooks for Member model
 function setupMemberHooks(Member, Organization) {
   Member.beforeCreate(async (member) => {
-    if (!member.memberNumber) {
-      const organization = await Organization.findByPk(member.organizationId);
-      const prefix = organization?.type === 'verein' ? 'M' : 'K';
-      
-      const lastMember = await Member.findOne({
-        where: { organizationId: member.organizationId },
-        order: [['created_at', 'DESC']]
-      });
-      
-      let nextNumber = 1;
-      if (lastMember && lastMember.memberNumber) {
-        const match = lastMember.memberNumber.match(/\d+$/);
-        if (match) {
-          nextNumber = parseInt(match[0]) + 1;
+    if (!member.memberNumber && member.organizationId) {
+      try {
+        const organization = await Organization.findByPk(member.organizationId);
+        if (!organization) {
+          console.error('❌ [Hook] Organization not found:', member.organizationId);
+          return;
         }
+        
+        const prefix = organization.type === 'verein' ? 'M' : 'K';
+        
+        // Get the highest member number for this organization
+        const lastMember = await Member.findOne({
+          where: { 
+            organizationId: member.organizationId,
+            memberNumber: {
+              [Op.like]: `${prefix}%`
+            }
+          },
+          order: [['memberNumber', 'DESC']]
+        });
+        
+        let nextNumber = 1;
+        if (lastMember && lastMember.memberNumber) {
+          const match = lastMember.memberNumber.match(/\d+$/);
+          if (match) {
+            nextNumber = parseInt(match[0]) + 1;
+          }
+        }
+        
+        member.memberNumber = `${prefix}${nextNumber.toString().padStart(3, '0')}`;
+        console.log(`🔢 [Hook] Generated member number: ${member.memberNumber} for org ${organization.name}`);
+      } catch (error) {
+        console.error('❌ [Hook] Error generating member number:', error);
+        // Set a fallback member number
+        member.memberNumber = `TEMP${Date.now()}`;
       }
-      
-      member.memberNumber = `${prefix}${nextNumber.toString().padStart(3, '0')}`;
     }
   });
 }
@@ -106,6 +136,32 @@ function setupMemberHooks(Member, Organization) {
 // Routes definieren
 function setupRoutes(models) {
   const { Member, Organization, sequelize } = models;
+
+  // Debug route to check existing members
+  router.get('/debug/emails', async (req, res) => {
+    try {
+      const members = await Member.findAll({
+        attributes: ['id', 'email', 'organizationId', 'firstName', 'lastName'],
+        include: [{
+          model: Organization,
+          as: 'organization',
+          attributes: ['id', 'name']
+        }]
+      });
+      
+      res.json({
+        totalMembers: members.length,
+        members: members.map(m => ({
+          id: m.id,
+          email: m.email,
+          name: `${m.firstName} ${m.lastName}`,
+          organization: m.organization?.name || 'Unknown'
+        }))
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // GET /api/members - List members with search, filter, sort, pagination
   router.get('/', async (req, res) => {
@@ -133,12 +189,20 @@ function setupRoutes(models) {
         phone = ''
       } = req.query;
 
+      // Get current organization
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+
       // Pagination
       const offset = (parseInt(page) - 1) * parseInt(limit);
       const pageLimit = parseInt(limit);
 
-      // Build where conditions
-      const whereConditions = {};
+      // Build where conditions - ALWAYS filter by organization
+      const whereConditions = {
+        organizationId: organization.id
+      };
       
       if (status && ['active', 'inactive', 'suspended'].includes(status)) {
         whereConditions.status = status;
@@ -220,7 +284,7 @@ function setupRoutes(models) {
       const hasNextPage = parseInt(page) < totalPages;
       const hasPrevPage = parseInt(page) > 1;
 
-      console.log(`✅ Retrieved ${members.length} of ${count} members`);
+      console.log(`✅ Retrieved ${members.length} of ${count} members for org ${organization.id}`);
 
       res.json({
         members,
@@ -245,6 +309,7 @@ function setupRoutes(models) {
           sortBy: validSortField,
           sortOrder: validSortOrder
         },
+        organizationId: organization.id,
         timestamp: new Date().toISOString(),
         success: true
       });
@@ -263,11 +328,16 @@ function setupRoutes(models) {
   // Member statistics
   router.get('/stats', async (req, res) => {
     try {
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+
       const [total, active, inactive, suspended] = await Promise.all([
-        Member.count(),
-        Member.count({ where: { status: 'active' } }),
-        Member.count({ where: { status: 'inactive' } }),
-        Member.count({ where: { status: 'suspended' } })
+        Member.count({ where: { organizationId: organization.id } }),
+        Member.count({ where: { status: 'active', organizationId: organization.id } }),
+        Member.count({ where: { status: 'inactive', organizationId: organization.id } }),
+        Member.count({ where: { status: 'suspended', organizationId: organization.id } })
       ]);
 
       const oneWeekAgo = new Date();
@@ -275,6 +345,7 @@ function setupRoutes(models) {
       
       const newMembersThisWeek = await Member.count({
         where: {
+          organizationId: organization.id,
           created_at: {
             [Op.gte]: oneWeekAgo
           }
@@ -287,9 +358,11 @@ function setupRoutes(models) {
           COUNT(*) as count
         FROM members 
         WHERE created_at >= CURRENT_DATE - INTERVAL '12 months'
+          AND organization_id = :orgId
         GROUP BY DATE_TRUNC('month', created_at)
         ORDER BY month ASC
       `, {
+        replacements: { orgId: organization.id },
         type: sequelize.QueryTypes.SELECT
       });
 
@@ -302,6 +375,7 @@ function setupRoutes(models) {
           newThisWeek: newMembersThisWeek
         },
         monthlyGrowth: monthlyStats,
+        organizationId: organization.id,
         timestamp: new Date().toISOString()
       });
 
@@ -317,7 +391,16 @@ function setupRoutes(models) {
   // Get single member
   router.get('/:id', async (req, res) => {
     try {
-      const member = await Member.findByPk(req.params.id, {
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+
+      const member = await Member.findOne({
+        where: { 
+          id: req.params.id,
+          organizationId: organization.id 
+        },
         include: [{ 
           model: Organization,
           as: 'organization'
@@ -343,15 +426,33 @@ function setupRoutes(models) {
     try {
       const { firstName, lastName, email, phone, address, memberNumber, status = 'active', membershipData } = req.body;
       
-      if (!firstName || !lastName || !email) {
+      if (!firstName || !lastName) {
         return res.status(400).json({ 
-          error: 'First name, last name, and email are required' 
+          error: 'Vorname und Nachname sind Pflichtfelder' 
         });
       }
       
       const organization = await Organization.findOne();
       if (!organization) {
         return res.status(400).json({ error: 'No organization configured' });
+      }
+      
+      // Check if email already exists FOR THIS ORGANIZATION (only if email provided)
+      if (email) {
+        const existingMember = await Member.findOne({
+          where: { 
+            email: email.toLowerCase(),
+            organizationId: organization.id 
+          }
+        });
+        
+        if (existingMember) {
+          console.log(`⚠️ Email already exists in organization ${organization.id}: ${email}`);
+          return res.status(400).json({ 
+            error: 'Diese E-Mail-Adresse wird bereits in Ihrer Organisation verwendet',
+            field: 'email'
+          });
+        }
       }
       
       let validatedMembershipData = membershipData || {};
@@ -381,9 +482,16 @@ function setupRoutes(models) {
       let generatedMemberNumber = memberNumber;
       if (!generatedMemberNumber) {
         const prefix = organization.type === 'verein' ? 'M' : 'K';
+        
+        // Get the highest member number for this organization
         const lastMember = await Member.findOne({
-          where: { organizationId: organization.id },
-          order: [['created_at', 'DESC']]
+          where: { 
+            organizationId: organization.id,
+            memberNumber: {
+              [Op.like]: `${prefix}%`
+            }
+          },
+          order: [['memberNumber', 'DESC']]
         });
         
         let nextNumber = 1;
@@ -395,12 +503,13 @@ function setupRoutes(models) {
         }
         
         generatedMemberNumber = `${prefix}${nextNumber.toString().padStart(3, '0')}`;
+        console.log(`🔢 Generated member number: ${generatedMemberNumber} for org ${organization.id}`);
       }
       
       const member = await Member.create({
         firstName,
         lastName,
-        email,
+        email: email ? email.toLowerCase() : null, // Store email in lowercase or null
         phone,
         address,
         memberNumber: generatedMemberNumber,
@@ -417,13 +526,28 @@ function setupRoutes(models) {
         }]
       });
       
-      console.log(`✅ Member created: ${firstName} ${lastName} (${generatedMemberNumber})`);
+      console.log(`✅ Member created: ${firstName} ${lastName} (${createdMember.memberNumber}) in org ${organization.id}`);
       
       res.status(201).json(createdMember);
     } catch (error) {
       console.error('❌ [CREATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
-        res.status(400).json({ error: 'Email or member number already exists' });
+        // More specific error message
+        if (error.fields?.email) {
+          res.status(400).json({ 
+            error: 'Diese E-Mail-Adresse wird bereits verwendet',
+            field: 'email' 
+          });
+        } else if (error.fields?.member_number) {
+          res.status(400).json({ 
+            error: 'Diese Mitgliedsnummer existiert bereits',
+            field: 'memberNumber' 
+          });
+        } else {
+          res.status(400).json({ 
+            error: 'Ein Datensatz mit diesen Angaben existiert bereits' 
+          });
+        }
       } else {
         res.status(500).json({ 
           error: 'Failed to create member',
@@ -438,9 +562,38 @@ function setupRoutes(models) {
     try {
       const { firstName, lastName, email, phone, address, memberNumber, status, membershipData } = req.body;
       
-      const member = await Member.findByPk(req.params.id);
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+      
+      const member = await Member.findOne({
+        where: { 
+          id: req.params.id,
+          organizationId: organization.id 
+        }
+      });
+      
       if (!member) {
         return res.status(404).json({ error: 'Member not found' });
+      }
+      
+      // Check if email is being changed and already exists (only if email provided)
+      if (email && email.toLowerCase() !== (member.email || '').toLowerCase()) {
+        const existingMember = await Member.findOne({
+          where: { 
+            email: email.toLowerCase(),
+            organizationId: organization.id,
+            id: { [Op.ne]: member.id } // Exclude current member
+          }
+        });
+        
+        if (existingMember) {
+          return res.status(400).json({ 
+            error: 'Diese E-Mail-Adresse wird bereits in Ihrer Organisation verwendet',
+            field: 'email'
+          });
+        }
       }
       
       let validatedMembershipData = membershipData || {};
@@ -470,7 +623,7 @@ function setupRoutes(models) {
       await member.update({
         firstName,
         lastName,
-        email,
+        email: email ? email.toLowerCase() : null,
         phone,
         address,
         memberNumber,
@@ -485,13 +638,27 @@ function setupRoutes(models) {
         }]
       });
       
-      console.log(`✅ Member updated: ${firstName} ${lastName}`);
+      console.log(`✅ Member updated: ${firstName} ${lastName} in org ${organization.id}`);
       
       res.json(updatedMember);
     } catch (error) {
       console.error('❌ [UPDATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
-        res.status(400).json({ error: 'Email or member number already exists' });
+        if (error.fields?.email) {
+          res.status(400).json({ 
+            error: 'Diese E-Mail-Adresse wird bereits verwendet',
+            field: 'email' 
+          });
+        } else if (error.fields?.member_number) {
+          res.status(400).json({ 
+            error: 'Diese Mitgliedsnummer existiert bereits',
+            field: 'memberNumber' 
+          });
+        } else {
+          res.status(400).json({ 
+            error: 'Ein Datensatz mit diesen Angaben existiert bereits' 
+          });
+        }
       } else {
         res.status(500).json({ 
           error: 'Failed to update member',
@@ -504,7 +671,18 @@ function setupRoutes(models) {
   // Delete member
   router.delete('/:id', async (req, res) => {
     try {
-      const member = await Member.findByPk(req.params.id);
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+
+      const member = await Member.findOne({
+        where: { 
+          id: req.params.id,
+          organizationId: organization.id 
+        }
+      });
+      
       if (!member) {
         return res.status(404).json({ error: 'Member not found' });
       }
@@ -512,7 +690,7 @@ function setupRoutes(models) {
       const memberInfo = `${member.firstName} ${member.lastName}`;
       await member.destroy();
       
-      console.log(`✅ Member deleted: ${memberInfo}`);
+      console.log(`✅ Member deleted: ${memberInfo} from org ${organization.id}`);
       
       res.json({ message: 'Member deleted successfully' });
     } catch (error) {
@@ -536,6 +714,11 @@ function setupRoutes(models) {
       if (!updates || Object.keys(updates).length === 0) {
         return res.status(400).json({ error: 'updates object is required' });
       }
+      
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
 
       const allowedFields = ['status', 'phone', 'address'];
       const updateData = {};
@@ -557,11 +740,12 @@ function setupRoutes(models) {
         where: {
           id: {
             [Op.in]: memberIds
-          }
+          },
+          organizationId: organization.id
         }
       });
 
-      console.log(`✅ Bulk updated ${affectedCount} members`);
+      console.log(`✅ Bulk updated ${affectedCount} members in org ${organization.id}`);
 
       res.json({
         message: 'Bulk update successful',
@@ -592,12 +776,18 @@ function setupRoutes(models) {
           error: 'Too many members for bulk deletion. Maximum 50 allowed.' 
         });
       }
+      
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
 
       const membersToDelete = await Member.findAll({
         where: {
           id: {
             [Op.in]: memberIds
-          }
+          },
+          organizationId: organization.id
         },
         attributes: ['id', 'firstName', 'lastName', 'memberNumber']
       });
@@ -606,11 +796,12 @@ function setupRoutes(models) {
         where: {
           id: {
             [Op.in]: memberIds
-          }
+          },
+          organizationId: organization.id
         }
       });
 
-      console.log(`✅ Bulk deleted ${deletedCount} members`);
+      console.log(`✅ Bulk deleted ${deletedCount} members from org ${organization.id}`);
 
       res.json({
         message: 'Bulk deletion successful',
@@ -636,7 +827,14 @@ function setupRoutes(models) {
     try {
       const { status, search } = req.query;
       
-      const whereConditions = {};
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
+      
+      const whereConditions = {
+        organizationId: organization.id
+      };
       if (status) whereConditions.status = status;
       
       let searchCondition = {};
@@ -661,7 +859,7 @@ function setupRoutes(models) {
         order: [['firstName', 'ASC'], ['lastName', 'ASC']]
       });
 
-      const orgType = members[0]?.organization?.type || 'verein';
+      const orgType = organization.type;
       const csvHeaders = [
         orgType === 'verein' ? 'Mitgliedsnummer' : 'Kundennummer',
         'Vorname',
@@ -697,7 +895,7 @@ function setupRoutes(models) {
         ...csvRows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
       ].join('\n');
 
-      const fileName = `${orgType}_${new Date().toISOString().split('T')[0]}.csv`;
+      const fileName = `${orgType}_${organization.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
       
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -706,7 +904,7 @@ function setupRoutes(models) {
       res.write(csvContent);
       res.end();
 
-      console.log(`✅ Exported ${members.length} members to CSV: ${fileName}`);
+      console.log(`✅ Exported ${members.length} members to CSV for org ${organization.id}: ${fileName}`);
 
     } catch (error) {
       console.error('❌ [EXPORT_MEMBERS_CSV] Error:', error);
@@ -725,15 +923,24 @@ function setupRoutes(models) {
       if (!query || query.length < 2) {
         return res.json({ suggestions: [] });
       }
+      
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(400).json({ error: 'No organization configured' });
+      }
 
       let suggestions = [];
       const searchTerm = `%${query}%`;
+      const orgCondition = { organizationId: organization.id };
 
       switch (field) {
         case 'firstName':
           suggestions = await Member.findAll({
             attributes: [[sequelize.fn('DISTINCT', sequelize.col('first_name')), 'value']],
-            where: { firstName: { [Op.iLike]: searchTerm } },
+            where: { 
+              firstName: { [Op.iLike]: searchTerm },
+              ...orgCondition 
+            },
             limit: parseInt(limit),
             raw: true
           });
@@ -742,7 +949,10 @@ function setupRoutes(models) {
         case 'lastName':
           suggestions = await Member.findAll({
             attributes: [[sequelize.fn('DISTINCT', sequelize.col('last_name')), 'value']],
-            where: { lastName: { [Op.iLike]: searchTerm } },
+            where: { 
+              lastName: { [Op.iLike]: searchTerm },
+              ...orgCondition 
+            },
             limit: parseInt(limit),
             raw: true
           });
@@ -751,7 +961,10 @@ function setupRoutes(models) {
         case 'email':
           suggestions = await Member.findAll({
             attributes: [[sequelize.fn('DISTINCT', sequelize.col('email')), 'value']],
-            where: { email: { [Op.iLike]: searchTerm } },
+            where: { 
+              email: { [Op.iLike]: searchTerm },
+              ...orgCondition 
+            },
             limit: parseInt(limit),
             raw: true
           });
@@ -760,7 +973,10 @@ function setupRoutes(models) {
         case 'memberNumber':
           suggestions = await Member.findAll({
             attributes: [[sequelize.fn('DISTINCT', sequelize.col('member_number')), 'value']],
-            where: { memberNumber: { [Op.iLike]: searchTerm } },
+            where: { 
+              memberNumber: { [Op.iLike]: searchTerm },
+              ...orgCondition 
+            },
             limit: parseInt(limit),
             raw: true
           });
@@ -770,19 +986,28 @@ function setupRoutes(models) {
           const [firstNames, lastNames, emails] = await Promise.all([
             Member.findAll({
               attributes: [[sequelize.fn('DISTINCT', sequelize.col('first_name')), 'value']],
-              where: { firstName: { [Op.iLike]: searchTerm } },
+              where: { 
+                firstName: { [Op.iLike]: searchTerm },
+                ...orgCondition 
+              },
               limit: 3,
               raw: true
             }),
             Member.findAll({
               attributes: [[sequelize.fn('DISTINCT', sequelize.col('last_name')), 'value']],
-              where: { lastName: { [Op.iLike]: searchTerm } },
+              where: { 
+                lastName: { [Op.iLike]: searchTerm },
+                ...orgCondition 
+              },
               limit: 3,
               raw: true
             }),
             Member.findAll({
               attributes: [[sequelize.fn('DISTINCT', sequelize.col('email')), 'value']],
-              where: { email: { [Op.iLike]: searchTerm } },
+              where: { 
+                email: { [Op.iLike]: searchTerm },
+                ...orgCondition 
+              },
               limit: 4,
               raw: true
             })
