@@ -61,7 +61,7 @@ export const OrganizationProvider = ({ children }) => {
   const setupDemo = async (orgType) => {
     try {
       console.log('🎮 Setting up demo:', orgType);
-      const response = await axios.post(`${API_URL}/setup-demo`, { orgType });
+      const response = await axios.post(`${API_URL}/organization/setup-demo`, { orgType });
       console.log('✅ Demo setup complete:', response.data);
       
       setOrganization(response.data.organization);

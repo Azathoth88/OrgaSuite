@@ -34,7 +34,7 @@ const logError = (context, error) => {
 
 let models = {}; // Placeholder for DB models
 
-// Health Check (keine Änderung hier)
+// Health Check
 app.get('/api/health', async (req, res) => {
   try {
     if (models.sequelize) {
@@ -74,7 +74,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Database status (unverändert)
+// Database status
 app.get('/api/debug/db-status', async (req, res) => {
   try {
     const status = {
@@ -129,7 +129,7 @@ app.get('/api/debug/db-status', async (req, res) => {
   }
 });
 
-// Dev-Endpoints (unverändert)
+// Dev-Endpoints
 if (process.env.NODE_ENV === 'development') {
   app.get('/api/dev/test-iban', (req, res) => {
     const { validateIBANWithLogging } = require('./src/utils/ibanUtils');
@@ -186,26 +186,6 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
-// 404 + global error (unverändert)
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.use((err, req, res, next) => {
-  logError('GLOBAL_ERROR', err);
-
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong!',
-    timestamp: new Date().toISOString()
-  });
-});
-
 // Server startup mit fixierter Reihenfolge
 async function startServer() {
   console.log('🏢 ====================================');
@@ -217,11 +197,39 @@ async function startServer() {
     models = await databaseSetup.initializeDatabase();
     console.log('✅ Models initialized:', Object.keys(models).filter(k => k !== 'sequelize').join(', '));
 
-    // ✅ Routen nach der Modell-Initialisierung registrieren
-    app.use('/api/organization', organizationModule.setupRoutes(models));
-    app.use('/api/members', membersModule.setupRoutes(models));
-    app.use('/api/organization/config', configurationModule.setupRoutes(models));
+    // ✅ Routen NACH der Modell-Initialisierung und VOR app.listen() registrieren
+    // WICHTIGE REIHENFOLGE: Spezifischere Routen zuerst!
     app.use('/api/dashboard', dashboardModule.setupRoutes(models));
+    app.use('/api/members', membersModule.setupRoutes(models));
+    
+    // Organization routes (includes /setup-demo)
+    app.use('/api/organization', organizationModule.setupRoutes(models));
+    
+    // NACH organization muss config kommen (wegen /api/organization/config)
+    app.use('/api/organization/config', configurationModule.setupRoutes(models));
+
+    console.log('✅ Routes registered successfully');
+
+    // 404 handler - MUSS nach allen Routen kommen
+    app.use('*', (req, res) => {
+      res.status(404).json({
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // Global error handler
+    app.use((err, req, res, next) => {
+      logError('GLOBAL_ERROR', err);
+
+      res.status(500).json({
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong!',
+        timestamp: new Date().toISOString()
+      });
+    });
 
     // Starte Server
     app.listen(PORT, '0.0.0.0', () => {
@@ -232,6 +240,15 @@ async function startServer() {
       console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
       console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
       console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
+      console.log('');
+      console.log('📍 Available routes:');
+      console.log('   - GET  /api/health');
+      console.log('   - GET  /api/organization');
+      console.log('   - POST /api/organization');
+      console.log('   - POST /api/organization/setup-demo');
+      console.log('   - GET  /api/members');
+      console.log('   - GET  /api/dashboard/stats');
+      console.log('   - GET  /api/organization/config');
       console.log('');
     });
   } catch (error) {

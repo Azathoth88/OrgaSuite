@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
+import MemberFormModal from '../MemberFormModal';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -52,6 +53,8 @@ const MembersView = () => {
   // UI States
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
 
   // Debounce search term
   useEffect(() => {
@@ -208,6 +211,44 @@ const MembersView = () => {
     setCurrentPage(1);
   };
 
+  // Handler for member creation/update
+  const handleAddMember = () => {
+    setEditingMember(null);
+    setShowMemberModal(true);
+  };
+
+  const handleEditMember = (member) => {
+    setEditingMember(member);
+    setShowMemberModal(true);
+  };
+
+  const handleMemberSaved = (savedMember) => {
+    // Refresh the members list
+    fetchMembers();
+    setShowMemberModal(false);
+    setEditingMember(null);
+  };
+
+  const handleDeleteMember = async (member) => {
+    const confirmText = t('members.confirmDelete', 
+      `Möchten Sie ${member.firstName} ${member.lastName} wirklich löschen?`
+    );
+    
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_URL}/members/${member.id}`);
+      
+      alert(t('members.deleteSuccess', 'Mitglied erfolgreich gelöscht!'));
+      fetchMembers();
+    } catch (error) {
+      console.error('Error deleting member:', error);
+      alert(t('members.deleteError', 'Fehler beim Löschen des Mitglieds'));
+    }
+  };
+
   // Server-side Daten werden direkt verwendet (keine client-side Filterung mehr nötig)
   const displayMembers = members;
   
@@ -352,7 +393,7 @@ const MembersView = () => {
               📄 Export
             </button>
             <button
-              onClick={() => {/* TODO: Add member */}}
+              onClick={handleAddMember}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
               ➕ {t('members.addMember')}
@@ -658,21 +699,21 @@ const MembersView = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => {/* TODO: View member */}}
+                          onClick={() => handleEditMember(member)}
                           className="text-blue-600 hover:text-blue-900"
                           title={t('actions.view')}
                         >
                           👁️
                         </button>
                         <button
-                          onClick={() => {/* TODO: Edit member */}}
+                          onClick={() => handleEditMember(member)}
                           className="text-green-600 hover:text-green-900"
                           title={t('actions.edit')}
                         >
                           ✏️
                         </button>
                         <button
-                          onClick={() => {/* TODO: Delete member */}}
+                          onClick={() => handleDeleteMember(member)}
                           className="text-red-600 hover:text-red-900"
                           title={t('actions.delete')}
                         >
@@ -807,6 +848,17 @@ const MembersView = () => {
           </div>
         </div>
       )}
+
+      {/* Member Form Modal */}
+      <MemberFormModal
+        isOpen={showMemberModal}
+        onClose={() => {
+          setShowMemberModal(false);
+          setEditingMember(null);
+        }}
+        member={editingMember}
+        onSuccess={handleMemberSaved}
+      />
     </div>
   );
 };

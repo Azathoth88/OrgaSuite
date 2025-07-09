@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
+import MemberFormModal from '../MemberFormModal';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -10,6 +11,7 @@ const DashboardView = () => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showMemberModal, setShowMemberModal] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -20,17 +22,15 @@ const DashboardView = () => {
       setLoading(true);
       const [statsRes, membersRes] = await Promise.all([
         axios.get(`${API_URL}/dashboard/stats`),
-        axios.get(`${API_URL}/members?limit=5&sortBy=created_at&sortOrder=DESC`) // Enhanced API call
+        axios.get(`${API_URL}/members?limit=5&sortBy=created_at&sortOrder=DESC`)
       ]);
       
       setStats(statsRes.data);
       
-      // ✅ Handle Enhanced API Response Format
+      // Handle Enhanced API Response Format
       if (membersRes.data.members) {
-        // New enhanced API response
         setMembers(membersRes.data.members);
       } else {
-        // Legacy API response - fallback
         setMembers(Array.isArray(membersRes.data) ? membersRes.data : []);
       }
       
@@ -41,6 +41,15 @@ const DashboardView = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddMember = () => {
+    setShowMemberModal(true);
+  };
+
+  const handleMemberSaved = () => {
+    fetchData(); // Refresh data
+    setShowMemberModal(false);
   };
 
   if (loading) {
@@ -152,7 +161,10 @@ const DashboardView = () => {
             <h2 className="text-xl font-semibold">
               {t('dashboard.recentMembers', 'Neueste')} {t('members.plural')}
             </h2>
-            <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            <button 
+              onClick={handleAddMember}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
               {t('members.addMember')}
             </button>
           </div>
@@ -162,7 +174,10 @@ const DashboardView = () => {
             <div className="text-center py-8">
               <div className="text-6xl mb-4">👥</div>
               <p className="text-gray-500 mb-4">{t('noMembers', 'Keine Mitglieder vorhanden')}</p>
-              <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
+              <button 
+                onClick={handleAddMember}
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
+              >
                 {t('members.addFirst', `Ersten ${t('members.single')} hinzufügen`)}
               </button>
             </div>
@@ -210,6 +225,14 @@ const DashboardView = () => {
           )}
         </div>
       </div>
+
+      {/* Member Form Modal */}
+      <MemberFormModal
+        isOpen={showMemberModal}
+        onClose={() => setShowMemberModal(false)}
+        member={null}
+        onSuccess={handleMemberSaved}
+      />
     </div>
   );
 };
