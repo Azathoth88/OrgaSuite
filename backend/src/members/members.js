@@ -21,17 +21,16 @@ function defineMemberModel(sequelize) {
       type: DataTypes.STRING,
       field: 'member_number'
     },
-    email: {
+    // Persönliche Daten
+    salutation: {
       type: DataTypes.STRING,
-      allowNull: true, // Email is now optional
-      validate: {
-        isEmail: true
-      }
+      allowNull: true,
+      comment: 'Anrede (Herr, Frau, Dr., Prof., etc.)'
     },
-    passwordHash: {
+    title: {
       type: DataTypes.STRING,
-      allowNull: false,
-      field: 'password_hash'
+      allowNull: true,
+      comment: 'Titel (z.B. Prof. Dr.)'
     },
     firstName: {
       type: DataTypes.STRING,
@@ -43,15 +42,68 @@ function defineMemberModel(sequelize) {
       allowNull: false,
       field: 'last_name'
     },
-    phone: DataTypes.STRING,
+    gender: {
+      type: DataTypes.ENUM('male', 'female', 'diverse', ''),
+      defaultValue: '',
+      comment: 'Geschlecht'
+    },
+    birthDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      field: 'birth_date',
+      comment: 'Geburtsdatum'
+    },
+    // Kontaktdaten
+    email: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isEmail: true
+      }
+    },
+    landline: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Festnetznummer'
+    },
+    mobile: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Mobilnummer'
+    },
+    website: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isUrl: {
+          args: [{ require_protocol: false }]
+        }
+      },
+      comment: 'Webseite'
+    },
+    // Alte phone Spalte für Rückwärtskompatibilität
+    phone: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.getDataValue('landline') || this.getDataValue('mobile');
+      }
+    },
+    // Anschrift
     address: {
       type: DataTypes.JSONB,
       defaultValue: {}
     },
+    // Mitgliedschaftsdaten inkl. erweiterte Bankdaten
     membershipData: {
       type: DataTypes.JSONB,
       defaultValue: {},
       field: 'membership_data'
+    },
+    // Sonstige Felder
+    passwordHash: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      field: 'password_hash'
     },
     permissions: {
       type: DataTypes.JSONB,
@@ -71,13 +123,25 @@ function defineMemberModel(sequelize) {
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: 'updated_at',
-    // Compound unique constraints
+    // Virtual field für berechnetes Alter
+    getterMethods: {
+      age() {
+        if (!this.birthDate) return null;
+        const today = new Date();
+        const birthDate = new Date(this.birthDate);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        return age;
+      }
+    },
     indexes: [
       {
         unique: true,
         fields: ['email', 'organization_id'],
         name: 'unique_email_per_org'
-        // Note: Partial index for null emails is handled in migration
       },
       {
         unique: true,
@@ -103,7 +167,6 @@ function setupMemberHooks(Member, Organization) {
         
         const prefix = organization.type === 'verein' ? 'M' : 'K';
         
-        // Get the highest member number for this organization
         const lastMember = await Member.findOne({
           where: { 
             organizationId: member.organizationId,
@@ -126,7 +189,6 @@ function setupMemberHooks(Member, Organization) {
         console.log(`🔢 [Hook] Generated member number: ${member.memberNumber} for org ${organization.name}`);
       } catch (error) {
         console.error('❌ [Hook] Error generating member number:', error);
-        // Set a fallback member number
         member.memberNumber = `TEMP${Date.now()}`;
       }
     }
@@ -137,44 +199,16 @@ function setupMemberHooks(Member, Organization) {
 function setupRoutes(models) {
   const { Member, Organization, sequelize } = models;
 
-  // Debug route to check existing members
-  router.get('/debug/emails', async (req, res) => {
-    try {
-      const members = await Member.findAll({
-        attributes: ['id', 'email', 'organizationId', 'firstName', 'lastName'],
-        include: [{
-          model: Organization,
-          as: 'organization',
-          attributes: ['id', 'name']
-        }]
-      });
-      
-      res.json({
-        totalMembers: members.length,
-        members: members.map(m => ({
-          id: m.id,
-          email: m.email,
-          name: `${m.firstName} ${m.lastName}`,
-          organization: m.organization?.name || 'Unknown'
-        }))
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // GET /api/members - List members with search, filter, sort, pagination
   router.get('/', async (req, res) => {
     try {
       console.log('📊 Members API called with query:', req.query);
 
-      // Check Op availability
       if (!Op || !Op.or || !Op.iLike) {
         console.error('❌ Sequelize Op not available');
         throw new Error('Sequelize operators not available');
       }
 
-      // Extract query parameters
       const {
         page = 1,
         limit = 10,
@@ -186,20 +220,20 @@ function setupRoutes(models) {
         firstName = '',
         lastName = '',
         email = '',
-        phone = ''
+        landline = '',
+        mobile = '',
+        gender = ''
       } = req.query;
 
-      // Get current organization
       const organization = await Organization.findOne();
       if (!organization) {
         return res.status(400).json({ error: 'No organization configured' });
       }
 
-      // Pagination
       const offset = (parseInt(page) - 1) * parseInt(limit);
       const pageLimit = parseInt(limit);
 
-      // Build where conditions - ALWAYS filter by organization
+      // Build where conditions
       const whereConditions = {
         organizationId: organization.id
       };
@@ -224,8 +258,16 @@ function setupRoutes(models) {
         whereConditions.email = { [Op.iLike]: `%${email}%` };
       }
 
-      if (phone) {
-        whereConditions.phone = { [Op.iLike]: `%${phone}%` };
+      if (landline) {
+        whereConditions.landline = { [Op.iLike]: `%${landline}%` };
+      }
+
+      if (mobile) {
+        whereConditions.mobile = { [Op.iLike]: `%${mobile}%` };
+      }
+
+      if (gender && ['male', 'female', 'diverse'].includes(gender)) {
+        whereConditions.gender = gender;
       }
 
       // Full-text search
@@ -237,19 +279,20 @@ function setupRoutes(models) {
             { lastName: { [Op.iLike]: `%${search}%` } },
             { email: { [Op.iLike]: `%${search}%` } },
             { memberNumber: { [Op.iLike]: `%${search}%` } },
-            { phone: { [Op.iLike]: `%${search}%` } }
+            { landline: { [Op.iLike]: `%${search}%` } },
+            { mobile: { [Op.iLike]: `%${search}%` } },
+            { title: { [Op.iLike]: `%${search}%` } }
           ]
         };
       }
 
-      // Combine conditions
       const finalWhereCondition = {
         ...whereConditions,
         ...searchCondition
       };
 
       // Validate and build sort order
-      const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt'];
+      const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt', 'birthDate'];
       const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
       const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
@@ -279,7 +322,12 @@ function setupRoutes(models) {
 
       const { count, rows: members } = queryResult;
 
-      // Pagination metadata
+      // Add calculated age to response
+      const membersWithAge = members.map(member => ({
+        ...member.toJSON(),
+        age: member.age
+      }));
+
       const totalPages = Math.ceil(count / pageLimit);
       const hasNextPage = parseInt(page) < totalPages;
       const hasPrevPage = parseInt(page) > 1;
@@ -287,7 +335,7 @@ function setupRoutes(models) {
       console.log(`✅ Retrieved ${members.length} of ${count} members for org ${organization.id}`);
 
       res.json({
-        members,
+        members: membersWithAge,
         pagination: {
           currentPage: parseInt(page),
           totalPages,
@@ -303,7 +351,9 @@ function setupRoutes(models) {
           firstName,
           lastName,
           email,
-          phone
+          landline,
+          mobile,
+          gender
         },
         sorting: {
           sortBy: validSortField,
@@ -333,11 +383,14 @@ function setupRoutes(models) {
         return res.status(400).json({ error: 'No organization configured' });
       }
 
-      const [total, active, inactive, suspended] = await Promise.all([
+      const [total, active, inactive, suspended, male, female, diverse] = await Promise.all([
         Member.count({ where: { organizationId: organization.id } }),
         Member.count({ where: { status: 'active', organizationId: organization.id } }),
         Member.count({ where: { status: 'inactive', organizationId: organization.id } }),
-        Member.count({ where: { status: 'suspended', organizationId: organization.id } })
+        Member.count({ where: { status: 'suspended', organizationId: organization.id } }),
+        Member.count({ where: { gender: 'male', organizationId: organization.id } }),
+        Member.count({ where: { gender: 'female', organizationId: organization.id } }),
+        Member.count({ where: { gender: 'diverse', organizationId: organization.id } })
       ]);
 
       const oneWeekAgo = new Date();
@@ -350,6 +403,28 @@ function setupRoutes(models) {
             [Op.gte]: oneWeekAgo
           }
         }
+      });
+
+      // Age distribution
+      const ageDistribution = await sequelize.query(`
+        SELECT 
+          CASE 
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) < 18 THEN 'under18'
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) BETWEEN 18 AND 25 THEN '18-25'
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) BETWEEN 26 AND 35 THEN '26-35'
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) BETWEEN 36 AND 50 THEN '36-50'
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) BETWEEN 51 AND 65 THEN '51-65'
+            WHEN EXTRACT(YEAR FROM AGE(birth_date)) > 65 THEN 'over65'
+            ELSE 'unknown'
+          END as age_group,
+          COUNT(*) as count
+        FROM members 
+        WHERE organization_id = :orgId
+        GROUP BY age_group
+        ORDER BY age_group
+      `, {
+        replacements: { orgId: organization.id },
+        type: sequelize.QueryTypes.SELECT
       });
 
       const monthlyStats = await sequelize.query(`
@@ -374,6 +449,13 @@ function setupRoutes(models) {
           suspended,
           newThisWeek: newMembersThisWeek
         },
+        gender: {
+          male,
+          female,
+          diverse,
+          notSpecified: total - male - female - diverse
+        },
+        ageDistribution,
         monthlyGrowth: monthlyStats,
         organizationId: organization.id,
         timestamp: new Date().toISOString()
@@ -411,7 +493,11 @@ function setupRoutes(models) {
         return res.status(404).json({ error: 'Member not found' });
       }
       
-      res.json(member);
+      // Add calculated age
+      const memberData = member.toJSON();
+      memberData.age = member.age;
+      
+      res.json(memberData);
     } catch (error) {
       console.error('❌ [GET_MEMBER] Error:', error);
       res.status(500).json({ 
@@ -424,7 +510,11 @@ function setupRoutes(models) {
   // Create new member
   router.post('/', async (req, res) => {
     try {
-      const { firstName, lastName, email, phone, address, memberNumber, status = 'active', membershipData } = req.body;
+      const { 
+        salutation, title, firstName, lastName, gender, birthDate,
+        email, landline, mobile, website, address, memberNumber, 
+        status = 'active', membershipData 
+      } = req.body;
       
       if (!firstName || !lastName) {
         return res.status(400).json({ 
@@ -456,6 +546,8 @@ function setupRoutes(models) {
       }
       
       let validatedMembershipData = membershipData || {};
+      
+      // Validate IBAN if provided
       if (membershipData?.bankDetails?.iban) {
         const ibanValidation = validateIBANWithLogging(membershipData.bankDetails.iban, 'Member');
         
@@ -483,7 +575,6 @@ function setupRoutes(models) {
       if (!generatedMemberNumber) {
         const prefix = organization.type === 'verein' ? 'M' : 'K';
         
-        // Get the highest member number for this organization
         const lastMember = await Member.findOne({
           where: { 
             organizationId: organization.id,
@@ -507,10 +598,16 @@ function setupRoutes(models) {
       }
       
       const member = await Member.create({
+        salutation,
+        title,
         firstName,
         lastName,
-        email: email ? email.toLowerCase() : null, // Store email in lowercase or null
-        phone,
+        gender: gender || '',
+        birthDate,
+        email: email ? email.toLowerCase() : null,
+        landline,
+        mobile,
+        website,
         address,
         memberNumber: generatedMemberNumber,
         passwordHash: 'temp_password',
@@ -526,13 +623,16 @@ function setupRoutes(models) {
         }]
       });
       
+      // Add calculated age
+      const memberData = createdMember.toJSON();
+      memberData.age = createdMember.age;
+      
       console.log(`✅ Member created: ${firstName} ${lastName} (${createdMember.memberNumber}) in org ${organization.id}`);
       
-      res.status(201).json(createdMember);
+      res.status(201).json(memberData);
     } catch (error) {
       console.error('❌ [CREATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
-        // More specific error message
         if (error.fields?.email) {
           res.status(400).json({ 
             error: 'Diese E-Mail-Adresse wird bereits verwendet',
@@ -560,7 +660,11 @@ function setupRoutes(models) {
   // Update member
   router.put('/:id', async (req, res) => {
     try {
-      const { firstName, lastName, email, phone, address, memberNumber, status, membershipData } = req.body;
+      const { 
+        salutation, title, firstName, lastName, gender, birthDate,
+        email, landline, mobile, website, address, memberNumber, 
+        status, membershipData 
+      } = req.body;
       
       const organization = await Organization.findOne();
       if (!organization) {
@@ -584,7 +688,7 @@ function setupRoutes(models) {
           where: { 
             email: email.toLowerCase(),
             organizationId: organization.id,
-            id: { [Op.ne]: member.id } // Exclude current member
+            id: { [Op.ne]: member.id }
           }
         });
         
@@ -621,10 +725,16 @@ function setupRoutes(models) {
       }
       
       await member.update({
+        salutation,
+        title,
         firstName,
         lastName,
+        gender: gender || '',
+        birthDate,
         email: email ? email.toLowerCase() : null,
-        phone,
+        landline,
+        mobile,
+        website,
         address,
         memberNumber,
         status,
@@ -638,9 +748,13 @@ function setupRoutes(models) {
         }]
       });
       
+      // Add calculated age
+      const memberData = updatedMember.toJSON();
+      memberData.age = updatedMember.age;
+      
       console.log(`✅ Member updated: ${firstName} ${lastName} in org ${organization.id}`);
       
-      res.json(updatedMember);
+      res.json(memberData);
     } catch (error) {
       console.error('❌ [UPDATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
@@ -720,7 +834,7 @@ function setupRoutes(models) {
         return res.status(400).json({ error: 'No organization configured' });
       }
 
-      const allowedFields = ['status', 'phone', 'address'];
+      const allowedFields = ['status', 'landline', 'mobile', 'address', 'gender'];
       const updateData = {};
       
       for (const [key, value] of Object.entries(updates)) {
@@ -862,33 +976,65 @@ function setupRoutes(models) {
       const orgType = organization.type;
       const csvHeaders = [
         orgType === 'verein' ? 'Mitgliedsnummer' : 'Kundennummer',
+        'Anrede',
+        'Titel',
         'Vorname',
         'Nachname', 
+        'Geschlecht',
+        'Geburtsdatum',
+        'Alter',
         'E-Mail',
-        'Telefon',
+        'Festnetz',
+        'Mobil',
+        'Webseite',
         'Status',
         'Straße',
         'PLZ',
         'Stadt',
         'Land',
+        'IBAN',
+        'BIC',
+        'Bankbezeichnung',
+        'SEPA eingerichtet',
         orgType === 'verein' ? 'Mitglied seit' : 'Kunde seit',
         'Erstellt am'
       ];
 
-      const csvRows = members.map(member => [
-        member.memberNumber || '',
-        member.firstName || '',
-        member.lastName || '',
-        member.email || '',
-        member.phone || '',
-        member.status || '',
-        member.address?.street || '',
-        member.address?.zip || '',
-        member.address?.city || '',
-        member.address?.country || '',
-        member.joinedAt ? new Date(member.joinedAt).toLocaleDateString('de-DE') : '',
-        new Date(member.created_at).toLocaleDateString('de-DE')
-      ]);
+      const csvRows = members.map(member => {
+        const bankDetails = member.membershipData?.bankDetails || {};
+        const genderMap = {
+          male: 'Männlich',
+          female: 'Weiblich',
+          diverse: 'Divers',
+          '': 'Nicht angegeben'
+        };
+        
+        return [
+          member.memberNumber || '',
+          member.salutation || '',
+          member.title || '',
+          member.firstName || '',
+          member.lastName || '',
+          genderMap[member.gender] || 'Nicht angegeben',
+          member.birthDate ? new Date(member.birthDate).toLocaleDateString('de-DE') : '',
+          member.age !== null ? member.age.toString() : '',
+          member.email || '',
+          member.landline || '',
+          member.mobile || '',
+          member.website || '',
+          member.status || '',
+          member.address?.street || '',
+          member.address?.zip || '',
+          member.address?.city || '',
+          member.address?.country || '',
+          bankDetails.iban || '',
+          bankDetails.bic || '',
+          bankDetails.bankName || '',
+          bankDetails.sepaActive ? 'Ja' : 'Nein',
+          member.joinedAt ? new Date(member.joinedAt).toLocaleDateString('de-DE') : '',
+          new Date(member.created_at).toLocaleDateString('de-DE')
+        ];
+      });
 
       const csvContent = [
         csvHeaders.join(','),
