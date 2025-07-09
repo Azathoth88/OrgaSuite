@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "orgType": "verein",
+    "displayName": "Club"
+  },
+  "members": {
+    "single": "Member",
+    "plural": "Members",
+    "newMember": "New Member",
+    "addMember": "Add Member",
+    "editMember": "Edit Member",
+    "memberNumber": "Member Number",
+    "memberSince": "Member since",
+    "membershipFee": "Membership Fee",
+    "status": {
+      "active": "Active Member",
+      "inactive": "Inactive Member",
+      "suspended": "Suspended Member"
+    }
+  },
+  "dashboard": {
+    "title": "Club Dashboard",
+    "subtitle": "Club Management",
+    "stats": {
+      "totalMembers": "Total Members",
+      "activeMembers": "Active Members",
+      "pendingFees": "Pending Fees"
+    }
+  },
+  "actions": {
+    "create": "Create",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "status": "Status"
+  }
+}
