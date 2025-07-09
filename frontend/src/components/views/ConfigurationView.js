@@ -1,6 +1,10 @@
+// frontend/src/components/views/ConfigurationView.js - VOLLSTÄNDIG ERWEITERT
 import React, { useState, useContext, useEffect } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const ConfigurationView = () => {
   const { organization, saveOrganization } = useContext(OrganizationContext);
@@ -11,7 +15,7 @@ const ConfigurationView = () => {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('membership');
   
-  // Default Konfiguration
+  // Default Konfiguration VOLLSTÄNDIG ERWEITERT
   const defaultConfig = {
     membershipConfig: {
       statuses: [
@@ -53,6 +57,21 @@ const ConfigurationView = () => {
           }
         }
       ],
+      // ✅ NEUE KONFIGURATIONEN
+      joiningSources: [
+        { key: 'website', label: 'Internet / Webseite', color: 'blue', description: '', active: true },
+        { key: 'social_media', label: 'Social Media', color: 'purple', description: '', active: true },
+        { key: 'advertising', label: 'Werbung Geflügelzeitung', color: 'yellow', description: '', active: true },
+        { key: 'recommendation', label: 'Empfehlung SV-Mitglied', color: 'green', description: '', active: true },
+        { key: 'other', label: 'Sonstiges', color: 'gray', description: '', active: true }
+      ],
+      leavingReasons: [
+        { key: 'voluntary_resignation', label: 'Freiwillige Kündigung', color: 'blue', description: '', requiresDate: true, active: true },
+        { key: 'stopped_breeding', label: 'Zuchtaufgabe', color: 'orange', description: '', requiresDate: true, active: true },
+        { key: 'deceased', label: 'Verstorben', color: 'gray', description: '', requiresDate: true, active: true },
+        { key: 'expelled', label: 'Kündigung durch Verein', color: 'red', description: '', requiresDate: true, active: true },
+        { key: 'no_reason', label: 'Keine Angabe', color: 'gray', description: '', requiresDate: false, active: true }
+      ],
       defaultCurrency: 'EUR'
     },
     generalConfig: {
@@ -62,12 +81,21 @@ const ConfigurationView = () => {
     }
   };
 
-  // Aktuelle Konfiguration aus Organization Settings laden
+  // Aktuelle Konfiguration aus Organization Settings laden mit sicherer Struktur
   const [config, setConfig] = useState(() => {
     const orgSettings = organization?.settings || {};
     return {
-      ...defaultConfig,
-      ...orgSettings
+      membershipConfig: {
+        ...defaultConfig.membershipConfig,
+        ...(orgSettings.membershipConfig || {}),
+        statuses: orgSettings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
+        joiningSources: orgSettings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
+        leavingReasons: orgSettings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons
+      },
+      generalConfig: {
+        ...defaultConfig.generalConfig,
+        ...(orgSettings.generalConfig || {})
+      }
     };
   });
 
@@ -75,11 +103,59 @@ const ConfigurationView = () => {
   useEffect(() => {
     if (organization?.settings) {
       setConfig(prevConfig => ({
-        ...defaultConfig,
-        ...organization.settings
+        membershipConfig: {
+          ...defaultConfig.membershipConfig,
+          ...(organization.settings.membershipConfig || {}),
+          statuses: organization.settings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
+          joiningSources: organization.settings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
+          leavingReasons: organization.settings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons
+        },
+        generalConfig: {
+          ...defaultConfig.generalConfig,
+          ...(organization.settings.generalConfig || {})
+        }
       }));
     }
   }, [organization]);
+
+  // ✅ RESET-FUNKTION MIT API-AUFRUF
+  const handleResetToDefaults = async () => {
+    if (!window.confirm(t('configuration.reset.confirm', 'Möchten Sie wirklich alle Einstellungen auf die Standardwerte zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden.'))) {
+      return;
+    }
+
+    setSaving(true);
+    
+    try {
+      // Fallback: Use local defaultConfig if API is not available
+      setConfig({ ...defaultConfig });
+      
+      // Versuche API-Call, aber verwende lokalen Fallback bei Fehler
+      try {
+        const response = await axios.post(`${API_URL}/organization/config/reset-defaults`);
+        if (response.data?.config) {
+          setConfig(response.data.config);
+        }
+      } catch (apiError) {
+        console.warn('API reset not available, using local default config:', apiError);
+      }
+      
+      // Organization Context aktualisieren
+      if (saveOrganization) {
+        await saveOrganization({
+          ...organization,
+          settings: config
+        });
+      }
+      
+      alert(t('configuration.reset.success', 'Konfiguration wurde erfolgreich auf Standardwerte zurückgesetzt.'));
+    } catch (error) {
+      console.error('Error resetting configuration:', error);
+      alert(t('configuration.reset.error', 'Fehler beim Zurücksetzen der Konfiguration.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Speichern der Konfiguration
   const handleSave = async () => {
@@ -109,27 +185,27 @@ const ConfigurationView = () => {
     }
   };
 
-  // Mitgliedsstatus aktualisieren
+  // ✅ VOLLSTÄNDIGE MITGLIEDSSTATUS-FUNKTIONEN
   const updateMemberStatus = (index, field, value) => {
     setConfig(prev => ({
       ...prev,
       membershipConfig: {
         ...prev.membershipConfig,
-        statuses: prev.membershipConfig.statuses.map((status, i) => 
+        statuses: (prev.membershipConfig?.statuses || []).map((status, i) => 
           i === index ? { ...status, [field]: value } : status
         )
       }
     }));
   };
 
-  // Neuen Mitgliedsstatus hinzufügen
   const addMemberStatus = () => {
+    const currentStatuses = config.membershipConfig?.statuses || [];
     setConfig(prev => ({
       ...prev,
       membershipConfig: {
         ...prev.membershipConfig,
         statuses: [
-          ...prev.membershipConfig.statuses,
+          ...currentStatuses,
           {
             key: `status_${Date.now()}`,
             label: 'Neuer Status',
@@ -147,9 +223,9 @@ const ConfigurationView = () => {
     }));
   };
 
-  // Mitgliedsstatus entfernen
   const removeMemberStatus = (index) => {
-    if (config.membershipConfig.statuses.length <= 1) {
+    const currentStatuses = config.membershipConfig?.statuses || [];
+    if (currentStatuses.length <= 1) {
       alert(t('configuration.status.minRequired', 'Mindestens ein Status muss vorhanden sein.'));
       return;
     }
@@ -158,22 +234,21 @@ const ConfigurationView = () => {
       ...prev,
       membershipConfig: {
         ...prev.membershipConfig,
-        statuses: prev.membershipConfig.statuses.filter((_, i) => i !== index)
+        statuses: (prev.membershipConfig?.statuses || []).filter((_, i) => i !== index)
       }
     }));
   };
 
-  // Billing-Konfiguration für Status aktualisieren
   const updateStatusBilling = (index, field, value) => {
     setConfig(prev => ({
       ...prev,
       membershipConfig: {
         ...prev.membershipConfig,
-        statuses: prev.membershipConfig.statuses.map((status, i) => 
+        statuses: (prev.membershipConfig?.statuses || []).map((status, i) => 
           i === index ? { 
             ...status, 
             billing: { 
-              ...status.billing, 
+              ...(status.billing || {}), 
               [field]: field === 'fee' ? parseFloat(value) || 0 : value 
             } 
           } : status
@@ -182,24 +257,128 @@ const ConfigurationView = () => {
     }));
   };
 
-  // Standard-Währung aktualisieren
   const updateDefaultCurrency = (currency) => {
     setConfig(prev => ({
       ...prev,
       membershipConfig: {
-        ...prev.membershipConfig,
+        ...(prev.membershipConfig || {}),
         defaultCurrency: currency
       }
     }));
   };
 
-  // Tab-Definitionen
+  // ✅ NEUE FUNKTIONEN FÜR BEITRITTSQUELLEN
+  const updateJoiningSource = (index, field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        joiningSources: (prev.membershipConfig?.joiningSources || []).map((source, i) => 
+          i === index ? { ...source, [field]: value } : source
+        )
+      }
+    }));
+  };
+
+  const addJoiningSource = () => {
+    const currentSources = config.membershipConfig?.joiningSources || [];
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        joiningSources: [
+          ...currentSources,
+          {
+            key: `source_${Date.now()}`,
+            label: 'Neue Beitrittsquelle',
+            color: 'blue',
+            description: '',
+            active: true
+          }
+        ]
+      }
+    }));
+  };
+
+  const removeJoiningSource = (index) => {
+    const currentSources = config.membershipConfig?.joiningSources || [];
+    if (currentSources.length <= 1) {
+      alert(t('configuration.joiningSources.minRequired', 'Mindestens eine Beitrittsquelle muss vorhanden sein.'));
+      return;
+    }
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        joiningSources: (prev.membershipConfig?.joiningSources || []).filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  // ✅ NEUE FUNKTIONEN FÜR KÜNDIGUNGSGRÜNDE
+  const updateLeavingReason = (index, field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        leavingReasons: (prev.membershipConfig?.leavingReasons || []).map((reason, i) => 
+          i === index ? { ...reason, [field]: value } : reason
+        )
+      }
+    }));
+  };
+
+  const addLeavingReason = () => {
+    const currentReasons = config.membershipConfig?.leavingReasons || [];
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        leavingReasons: [
+          ...currentReasons,
+          {
+            key: `reason_${Date.now()}`,
+            label: 'Neuer Kündigungsgrund',
+            color: 'blue',
+            description: '',
+            requiresDate: true,
+            active: true
+          }
+        ]
+      }
+    }));
+  };
+
+  const removeLeavingReason = (index) => {
+    const currentReasons = config.membershipConfig?.leavingReasons || [];
+    if (currentReasons.length <= 1) {
+      alert(t('configuration.leavingReasons.minRequired', 'Mindestens ein Kündigungsgrund muss vorhanden sein.'));
+      return;
+    }
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        leavingReasons: (prev.membershipConfig?.leavingReasons || []).filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  // Tab-Definitionen VOLLSTÄNDIG ERWEITERT
   const tabs = [
     {
       id: 'membership',
       name: t('configuration.tabs.membership', 'Mitgliedschaft'),
       icon: '👥',
       description: t('configuration.tabs.membershipDesc', 'Status, Beiträge und Abrechnungszyklen')
+    },
+    {
+      id: 'sources_reasons', // ✅ NEUER TAB
+      name: t('configuration.tabs.sourcesReasons', 'Quellen & Gründe'),
+      icon: '📝',
+      description: t('configuration.tabs.sourcesReasonsDesc', 'Beitrittsquellen und Kündigungsgründe')
     },
     {
       id: 'general',
@@ -209,26 +388,28 @@ const ConfigurationView = () => {
     }
   ];
 
-  // Farb-Optionen für Status
+  // Farb-Optionen für Status ERWEITERT
   const colorOptions = [
     { value: 'green', label: t('configuration.colors.green', 'Grün'), class: 'bg-green-100 text-green-800' },
     { value: 'blue', label: t('configuration.colors.blue', 'Blau'), class: 'bg-blue-100 text-blue-800' },
     { value: 'yellow', label: t('configuration.colors.yellow', 'Gelb'), class: 'bg-yellow-100 text-yellow-800' },
     { value: 'red', label: t('configuration.colors.red', 'Rot'), class: 'bg-red-100 text-red-800' },
     { value: 'gray', label: t('configuration.colors.gray', 'Grau'), class: 'bg-gray-100 text-gray-800' },
-    { value: 'purple', label: t('configuration.colors.purple', 'Lila'), class: 'bg-purple-100 text-purple-800' }
+    { value: 'purple', label: t('configuration.colors.purple', 'Lila'), class: 'bg-purple-100 text-purple-800' },
+    { value: 'orange', label: t('configuration.colors.orange', 'Orange'), class: 'bg-orange-100 text-orange-800' },
+    { value: 'cyan', label: t('configuration.colors.cyan', 'Cyan'), class: 'bg-cyan-100 text-cyan-800' }
   ];
 
   if (!organization) {
     return (
       <div className="p-6">
         <div className="text-center">
-          <div className="text-6xl mb-4">⚙️</div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-xl font-semibold text-gray-800 mb-2">
-            {t('organization.notFound', 'Organisation nicht gefunden')}
+            {t('common.loading', 'Lädt...')}
           </h2>
           <p className="text-gray-600">
-            {t('organization.notFoundDesc', 'Bitte stellen Sie sicher, dass eine Organisation konfiguriert ist.')}
+            {t('organization.notFoundDesc', 'Organisation wird geladen...')}
           </p>
         </div>
       </div>
@@ -251,8 +432,9 @@ const ConfigurationView = () => {
           
           <div className="flex space-x-2">
             <button
-              onClick={() => setConfig({ ...defaultConfig })}
-              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              onClick={handleResetToDefaults}
+              disabled={saving}
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 transition-colors"
               title={t('configuration.reset', 'Auf Standardwerte zurücksetzen')}
             >
               🔄 {t('configuration.reset', 'Zurücksetzen')}
@@ -302,10 +484,10 @@ const ConfigurationView = () => {
         </div>
 
         <div className="p-6">
-          {/* Mitgliedschaft Tab */}
+          {/* ✅ VOLLSTÄNDIGER MITGLIEDSCHAFT TAB */}
           {activeTab === 'membership' && (
             <div className="space-y-8">
-              {/* Mitgliedsstatus Konfiguration */}
+              {/* Mitgliedsstatus Konfiguration - VOLLSTÄNDIG */}
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -320,7 +502,7 @@ const ConfigurationView = () => {
                 </div>
                 
                 <div className="space-y-4">
-                  {config.membershipConfig.statuses.map((status, index) => (
+                  {(config.membershipConfig?.statuses || []).map((status, index) => (
                     <div key={index} className="bg-gray-50 p-4 rounded-lg border">
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
                         <div>
@@ -329,7 +511,7 @@ const ConfigurationView = () => {
                           </label>
                           <input
                             type="text"
-                            value={status.key}
+                            value={status.key || ''}
                             onChange={(e) => updateMemberStatus(index, 'key', e.target.value)}
                             className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                             placeholder={t('configuration.status.keyPlaceholder', 'z.B. active')}
@@ -342,7 +524,7 @@ const ConfigurationView = () => {
                           </label>
                           <input
                             type="text"
-                            value={status.label}
+                            value={status.label || ''}
                             onChange={(e) => updateMemberStatus(index, 'label', e.target.value)}
                             className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                             placeholder={t('configuration.status.labelPlaceholder', 'z.B. Aktiv')}
@@ -354,7 +536,7 @@ const ConfigurationView = () => {
                             {t('configuration.status.color', 'Farbe')}
                           </label>
                           <select
-                            value={status.color}
+                            value={status.color || 'blue'}
                             onChange={(e) => updateMemberStatus(index, 'color', e.target.value)}
                             className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                           >
@@ -366,9 +548,9 @@ const ConfigurationView = () => {
                           </select>
                           <div className="mt-1">
                             <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-                              colorOptions.find(c => c.value === status.color)?.class || 'bg-gray-100 text-gray-800'
+                              colorOptions.find(c => c.value === (status.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
                             }`}>
-                              {t('configuration.status.preview', 'Vorschau')}: {status.label}
+                              {t('configuration.status.preview', 'Vorschau')}: {status.label || 'Status'}
                             </span>
                           </div>
                         </div>
@@ -385,7 +567,7 @@ const ConfigurationView = () => {
                                     ...prev,
                                     membershipConfig: {
                                       ...prev.membershipConfig,
-                                      statuses: prev.membershipConfig.statuses.map((s, i) => ({
+                                      statuses: (prev.membershipConfig?.statuses || []).map((s, i) => ({
                                         ...s,
                                         default: i === index ? e.target.checked : false
                                       }))
@@ -420,7 +602,7 @@ const ConfigurationView = () => {
                         />
                       </div>
 
-                      {/* Billing-Konfiguration für diesen Status */}
+                      {/* ✅ VOLLSTÄNDIGE Billing-Konfiguration für diesen Status */}
                       <div className="mt-4 p-3 bg-white border border-gray-200 rounded">
                         <h4 className="text-sm font-semibold text-gray-700 mb-3">
                           {t('configuration.status.billingTitle', 'Beitrags- und Abrechnungseinstellungen')}
@@ -460,7 +642,7 @@ const ConfigurationView = () => {
                                   />
                                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                     <span className="text-gray-500 text-sm">
-                                      {config.membershipConfig.defaultCurrency || 'EUR'}
+                                      {config.membershipConfig?.defaultCurrency || 'EUR'}
                                     </span>
                                   </div>
                                 </div>
@@ -504,8 +686,8 @@ const ConfigurationView = () => {
                               
                               <div className="md:col-span-2">
                                 <div className="bg-blue-50 p-2 rounded text-xs">
-                                  <strong>{t('configuration.status.preview', 'Vorschau')}:</strong> {t('configuration.status.previewInfo', 'Mitglieder mit Status')} "{status.label}" 
-                                  {' '}{t('configuration.status.previewPay', 'zahlen')} {status.billing?.fee || 0} {config.membershipConfig.defaultCurrency || 'EUR'}
+                                  <strong>{t('configuration.status.preview', 'Vorschau')}:</strong> {t('configuration.status.previewInfo', 'Mitglieder mit Status')} "{status.label || 'Status'}" 
+                                  {' '}{t('configuration.status.previewPay', 'zahlen')} {status.billing?.fee || 0} {config.membershipConfig?.defaultCurrency || 'EUR'}
                                   {' '}
                                   {status.billing?.frequency === 'monthly' && t('configuration.billing.monthlyDesc', 'jeden Monat')}
                                   {status.billing?.frequency === 'quarterly' && t('configuration.billing.quarterlyDesc', 'alle 3 Monate')}
@@ -541,7 +723,7 @@ const ConfigurationView = () => {
                     {t('configuration.defaultCurrency.label', 'Währung für alle Beiträge')}
                   </label>
                   <select
-                    value={config.membershipConfig.defaultCurrency}
+                    value={config.membershipConfig?.defaultCurrency || 'EUR'}
                     onChange={(e) => updateDefaultCurrency(e.target.value)}
                     className="w-full max-w-md p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   >
@@ -550,6 +732,240 @@ const ConfigurationView = () => {
                     <option value="CHF">{t('configuration.currency.chf', 'Schweizer Franken (CHF)')}</option>
                     <option value="GBP">{t('configuration.currency.gbp', 'Britisches Pfund (£)')}</option>
                   </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ NEUER TAB: Quellen & Gründe */}
+          {activeTab === 'sources_reasons' && (
+            <div className="space-y-8">
+              {/* Beitrittsquellen Konfiguration */}
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {t('configuration.joiningSources.title', 'Beitrittsquellen verwalten')}
+                  </h3>
+                  <button
+                    onClick={addJoiningSource}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                  >
+                    ➕ {t('configuration.joiningSources.add', 'Quelle hinzufügen')}
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  {(config.membershipConfig?.joiningSources || []).map((source, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.joiningSources.key', 'Schlüssel')}
+                          </label>
+                          <input
+                            type="text"
+                            value={source.key || ''}
+                            onChange={(e) => updateJoiningSource(index, 'key', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('configuration.joiningSources.keyPlaceholder', 'z.B. website')}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.joiningSources.label', 'Bezeichnung')}
+                          </label>
+                          <input
+                            type="text"
+                            value={source.label || ''}
+                            onChange={(e) => updateJoiningSource(index, 'label', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('configuration.joiningSources.labelPlaceholder', 'z.B. Internet / Webseite')}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.joiningSources.color', 'Farbe')}
+                          </label>
+                          <select
+                            value={source.color || 'blue'}
+                            onChange={(e) => updateJoiningSource(index, 'color', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          >
+                            {colorOptions.map(color => (
+                              <option key={color.value} value={color.value}>
+                                {color.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="mt-1">
+                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                              colorOptions.find(c => c.value === (source.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {t('configuration.joiningSources.preview', 'Vorschau')}: {source.label || 'Quelle'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-end space-x-2">
+                          <div className="flex-1">
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={source.active !== false}
+                                onChange={(e) => updateJoiningSource(index, 'active', e.target.checked)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {t('configuration.joiningSources.active', 'Aktiv')}
+                              </span>
+                            </label>
+                          </div>
+                          <button
+                            onClick={() => removeJoiningSource(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded"
+                            title={t('configuration.joiningSources.remove', 'Quelle entfernen')}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('configuration.joiningSources.description', 'Beschreibung')}
+                        </label>
+                        <input
+                          type="text"
+                          value={source.description || ''}
+                          onChange={(e) => updateJoiningSource(index, 'description', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          placeholder={t('configuration.joiningSources.descriptionPlaceholder', 'Beschreibung der Beitrittsquelle (optional)')}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Kündigungsgründe Konfiguration */}
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {t('configuration.leavingReasons.title', 'Kündigungsgründe verwalten')}
+                  </h3>
+                  <button
+                    onClick={addLeavingReason}
+                    className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                  >
+                    ➕ {t('configuration.leavingReasons.add', 'Grund hinzufügen')}
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  {(config.membershipConfig?.leavingReasons || []).map((reason, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.leavingReasons.key', 'Schlüssel')}
+                          </label>
+                          <input
+                            type="text"
+                            value={reason.key || ''}
+                            onChange={(e) => updateLeavingReason(index, 'key', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('configuration.leavingReasons.keyPlaceholder', 'z.B. deceased')}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.leavingReasons.label', 'Bezeichnung')}
+                          </label>
+                          <input
+                            type="text"
+                            value={reason.label || ''}
+                            onChange={(e) => updateLeavingReason(index, 'label', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('configuration.leavingReasons.labelPlaceholder', 'z.B. Verstorben')}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.leavingReasons.color', 'Farbe')}
+                          </label>
+                          <select
+                            value={reason.color || 'blue'}
+                            onChange={(e) => updateLeavingReason(index, 'color', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          >
+                            {colorOptions.map(color => (
+                              <option key={color.value} value={color.value}>
+                                {color.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="mt-1">
+                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                              colorOptions.find(c => c.value === (reason.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {t('configuration.leavingReasons.preview', 'Vorschau')}: {reason.label || 'Grund'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-end space-x-2">
+                          <div className="flex-1 space-y-2">
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={reason.active !== false}
+                                onChange={(e) => updateLeavingReason(index, 'active', e.target.checked)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {t('configuration.leavingReasons.active', 'Aktiv')}
+                              </span>
+                            </label>
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={reason.requiresDate || false}
+                                onChange={(e) => updateLeavingReason(index, 'requiresDate', e.target.checked)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {t('configuration.leavingReasons.requiresDate', 'Datum erforderlich')}
+                              </span>
+                            </label>
+                          </div>
+                          <button
+                            onClick={() => removeLeavingReason(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded"
+                            title={t('configuration.leavingReasons.remove', 'Grund entfernen')}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('configuration.leavingReasons.description', 'Beschreibung')}
+                        </label>
+                        <input
+                          type="text"
+                          value={reason.description || ''}
+                          onChange={(e) => updateLeavingReason(index, 'description', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          placeholder={t('configuration.leavingReasons.descriptionPlaceholder', 'Beschreibung des Kündigungsgrunds (optional)')}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -620,7 +1036,7 @@ const ConfigurationView = () => {
                 </h3>
                 
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap overflow-auto max-h-96">
                     {JSON.stringify(config, null, 2)}
                   </pre>
                 </div>
@@ -630,7 +1046,7 @@ const ConfigurationView = () => {
         </div>
       </div>
 
-      {/* Info-Panel */}
+      {/* Info-Panel VOLLSTÄNDIG ERWEITERT */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start">
           <div className="text-blue-600 text-xl mr-3">ℹ️</div>
@@ -643,6 +1059,9 @@ const ConfigurationView = () => {
               <li>• {t('configuration.info.existingBills', 'Bereits versendete Rechnungen werden nicht rückwirkend geändert')}</li>
               <li>• {t('configuration.info.individualOverride', 'Die Standardeinstellungen können für einzelne Mitglieder überschrieben werden')}</li>
               <li>• {t('configuration.info.autoBackup', 'Ein Backup der aktuellen Konfiguration wird automatisch erstellt')}</li>
+              <li>• <strong>{t('configuration.info.sourcesReasons', 'Beitrittsquellen und Kündigungsgründe helfen bei der statistischen Auswertung der Mitgliederbewegungen')}</strong></li>
+              <li>• {t('configuration.info.billingCycles', 'Verschiedene Mitgliedsstatus können unterschiedliche Beitragszyklen haben')}</li>
+              <li>• {t('configuration.info.statusColors', 'Farben helfen bei der visuellen Unterscheidung der Status in Listen und Berichten')}</li>
             </ul>
           </div>
         </div>
