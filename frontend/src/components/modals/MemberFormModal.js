@@ -71,7 +71,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     const fetchMemberStatuses = async () => {
       try {
         setLoadingStatuses(true);
-        const response = await axios.get(`${API_URL}/organization/member-statuses`);
+        const response = await axios.get(`${API_URL}/organization/config/member-statuses`);
         setMemberStatuses(response.data.statuses || []);
         
         // Set default status if not already set
