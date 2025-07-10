@@ -520,6 +520,49 @@ function setupRoutes(models) {
     }
   });
 
+  // ✅ NEW: GET /api/organization/config/member-statuses - Get member statuses configuration
+  router.get('/member-statuses', async (req, res) => {
+    try {
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' });
+      }
+      
+      const membershipConfig = organization.settings?.membershipConfig || {};
+      const statuses = membershipConfig.statuses || [];
+      
+      // Add additional info for each status
+      const enrichedStatuses = statuses.map(status => ({
+        ...status,
+        isDefault: status.default === true,
+        hasActiveBilling: status.billing?.active === true,
+        billingInfo: status.billing?.active ? {
+          fee: status.billing.fee,
+          currency: membershipConfig.defaultCurrency || 'EUR',
+          frequency: status.billing.frequency,
+          dueDay: status.billing.dueDay
+        } : null
+      }));
+      
+      res.json({
+        statuses: enrichedStatuses,
+        stats: {
+          total: statuses.length,
+          withBilling: statuses.filter(s => s.billing?.active).length,
+          defaultStatus: statuses.find(s => s.default)?.key || null,
+          availableColors: [...new Set(statuses.map(s => s.color))],
+          defaultCurrency: membershipConfig.defaultCurrency || 'EUR'
+        }
+      });
+    } catch (error) {
+      console.error('❌ [GET_MEMBER_STATUSES] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch member statuses',
+        details: error.message
+      });
+    }
+  });
+    
   // ✅ NEW: GET /api/organization/config/custom-fields - Get custom fields configuration
   router.get('/custom-fields', async (req, res) => {
     try {

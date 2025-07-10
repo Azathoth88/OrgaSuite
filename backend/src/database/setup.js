@@ -220,7 +220,7 @@ async function initializeDatabase() {
 
     // Sync database
     console.log('🔄 Synchronizing database models...');
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized successfully');
 
     // Run migration for bank_details

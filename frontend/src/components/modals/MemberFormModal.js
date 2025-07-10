@@ -1,4 +1,4 @@
-// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Custom Fields
+// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
@@ -14,6 +14,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   
   // State for configured member statuses and custom fields
   const [memberStatuses, setMemberStatuses] = useState([]);
+  const [defaultCurrency, setDefaultCurrency] = useState('EUR'); // ✅ NEU: Separater State für Currency
   const [customFieldsConfig, setCustomFieldsConfig] = useState({ tabs: [] });
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [loadingCustomFields, setLoadingCustomFields] = useState(true);
@@ -73,54 +74,66 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   } = useIBANValidation(formData.membershipData?.bankDetails?.iban || '');
 
   // ✅ NEW: Load Custom Fields Configuration
-useEffect(() => {
-  const fetchCustomFields = async () => {
-    try {
-      setLoadingCustomFields(true);
-      
-      // FIXED: Hauptkonfiguration laden (funktioniert definitiv)
-      const response = await axios.get(`http://localhost:5000/api/organization/config`);
-      
-      console.log('✅ Config Response:', response.data);
-      
-      // Custom Fields aus der Hauptkonfiguration extrahieren:
-      const customFields = response.data.config?.membershipConfig?.customFields || { tabs: [] };
-      
-      console.log('✅ Extracted Custom Fields:', customFields);
-      
-      setCustomFieldsConfig(customFields);
-      
-      // Debug: Multi-Entry Felder finden
-      const multiEntryFields = customFields.tabs
-        ?.flatMap(tab => tab.fields || [])
-        ?.filter(field => field.type === 'multi-entry');
+  useEffect(() => {
+    const fetchCustomFields = async () => {
+      try {
+        setLoadingCustomFields(true);
         
-      console.log('✅ Multi-Entry Fields:', multiEntryFields);
-      
-    } catch (error) {
-      console.error('❌ Error fetching config:', error);
-      setCustomFieldsConfig({ tabs: [] });
-    } finally {
-      setLoadingCustomFields(false);
+        // FIXED: Hauptkonfiguration laden (funktioniert definitiv)
+        const response = await axios.get(`http://localhost:5000/api/organization/config`);
+        
+        console.log('✅ Config Response:', response.data);
+        
+        // Custom Fields aus der Hauptkonfiguration extrahieren:
+        const customFields = response.data.config?.membershipConfig?.customFields || { tabs: [] };
+        
+        console.log('✅ Extracted Custom Fields:', customFields);
+        
+        setCustomFieldsConfig(customFields);
+        
+        // Debug: Multi-Entry Felder finden
+        const multiEntryFields = customFields.tabs
+          ?.flatMap(tab => tab.fields || [])
+          ?.filter(field => field.type === 'multi-entry');
+          
+        console.log('✅ Multi-Entry Fields:', multiEntryFields);
+        
+      } catch (error) {
+        console.error('❌ Error fetching config:', error);
+        setCustomFieldsConfig({ tabs: [] });
+      } finally {
+        setLoadingCustomFields(false);
+      }
+    };
+
+    if (isOpen) {
+      fetchCustomFields();
     }
-  };
+  }, [isOpen]);
 
-  if (isOpen) {
-    fetchCustomFields();
-  }
-}, [isOpen]);
-
-
-  // Load configured member statuses
+  // ✅ KORRIGIERT: Load configured member statuses + defaultCurrency
   useEffect(() => {
     const fetchMemberStatuses = async () => {
       try {
         setLoadingStatuses(true);
-        const response = await axios.get(`${API_URL}/organization/config/member-statuses`);
-        setMemberStatuses(response.data.statuses || []);
         
-        if (!formData.membershipData.membershipStatus && response.data.statuses.length > 0) {
-          const defaultStatus = response.data.statuses.find(s => s.isDefault) || response.data.statuses[0];
+        // ✅ Hauptkonfiguration laden statt nur member-statuses
+        const response = await axios.get(`${API_URL}/organization/config`);
+        const config = response.data.config;
+        
+        // ✅ Status und Currency getrennt extrahieren
+        const statuses = config.membershipConfig?.statuses || [];
+        const currency = config.membershipConfig?.defaultCurrency || 'EUR';
+        
+        setMemberStatuses(statuses);
+        setDefaultCurrency(currency); // ✅ Currency separat setzen
+        
+        console.log('✅ Loaded statuses:', statuses);
+        console.log('✅ Default currency:', currency);
+        
+        // ✅ Default status setzen wenn nötig
+        if (!formData.membershipData.membershipStatus && statuses.length > 0) {
+          const defaultStatus = statuses.find(s => s.isDefault) || statuses[0];
           setFormData(prev => ({
             ...prev,
             membershipData: {
@@ -130,7 +143,9 @@ useEffect(() => {
           }));
         }
       } catch (error) {
-        console.error('Error fetching member statuses:', error);
+        console.error('❌ Error fetching member statuses:', error);
+        setMemberStatuses([]);
+        setDefaultCurrency('EUR'); // ✅ Fallback für Currency
       } finally {
         setLoadingStatuses(false);
       }
@@ -243,6 +258,7 @@ useEffect(() => {
         setFieldErrors({});
         handleIbanChange('');
         setActiveTab('personal');
+        setDefaultCurrency('EUR'); // ✅ NEU: Currency zurücksetzen
       }, 300);
     }
   }, [isOpen, memberStatuses]);
@@ -267,7 +283,6 @@ useEffect(() => {
   const getCustomFieldValue = (tabKey, fieldKey) => {
     return formData.membershipData?.customFields?.[tabKey]?.[fieldKey];
   };
-
 
   // Enhanced form validation with custom fields
   const validateForm = () => {
@@ -830,7 +845,7 @@ useEffect(() => {
               </div>
             )}
 
-            {/* Membership Tab - VOLLSTÄNDIG */}
+            {/* Membership Tab - VOLLSTÄNDIG mit Currency Fix */}
             {activeTab === 'membership' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -880,7 +895,7 @@ useEffect(() => {
                         {memberStatuses.map(status => (
                           <option key={status.key} value={status.key}>
                             {status.label}
-                            {status.billing.active && ` (${status.billing.fee} ${status.billing.currency})`}
+                            {status.billing?.active && ` (${status.billing.fee} ${defaultCurrency})`}
                           </option>
                         ))}
                       </select>
@@ -892,13 +907,13 @@ useEffect(() => {
                         {selectedStatus.description && (
                           <p className="text-gray-600 mb-2">{selectedStatus.description}</p>
                         )}
-                        {selectedStatus.billing.active ? (
+                        {selectedStatus.billing?.active ? (
                           <div className="space-y-1">
                             <p className="font-medium text-gray-700">
                               {t('configuration.status.billingTitle', 'Beitragseinstellungen')}:
                             </p>
                             <p className="text-gray-600">
-                              • {t('configuration.status.feeAmount', 'Beitrag')}: {selectedStatus.billing.fee} {selectedStatus.billing.currency}
+                              • {t('configuration.status.feeAmount', 'Beitrag')}: {selectedStatus.billing.fee} {defaultCurrency}
                             </p>
                             <p className="text-gray-600">
                               • {t('configuration.billing.frequency', 'Turnus')}: 
