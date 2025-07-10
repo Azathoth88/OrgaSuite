@@ -1,13 +1,102 @@
-// backend/src/configuration/configuration.js - ERWEITERT
+// backend/src/configuration/configuration.js - ERWEITERT um Custom Fields
 const express = require('express');
 
 // Router erstellen
 const router = express.Router();
 
 /**
- * Validate membership configuration including joining sources and leaving reasons
- * @param {object} config - Configuration object to validate
- * @returns {object} - Validation result with isValid and errors
+ * Validate custom fields configuration
+ * @param {object} customFields - Custom fields configuration
+ * @returns {object} - Validation result
+ */
+function validateCustomFields(customFields) {
+  const errors = [];
+  
+  if (!customFields || !Array.isArray(customFields.tabs)) {
+    return { isValid: true, errors: [] }; // Custom fields are optional
+  }
+  
+  customFields.tabs.forEach((tab, tabIndex) => {
+    if (!tab.key || typeof tab.key !== 'string') {
+      errors.push(`Custom tab ${tabIndex + 1}: key is required and must be a string`);
+    }
+    
+    if (!tab.label || typeof tab.label !== 'string') {
+      errors.push(`Custom tab ${tabIndex + 1}: label is required and must be a string`);
+    }
+    
+    if (!tab.fields || !Array.isArray(tab.fields)) {
+      errors.push(`Custom tab ${tabIndex + 1}: fields array is required`);
+      return;
+    }
+    
+    tab.fields.forEach((field, fieldIndex) => {
+      const fieldPath = `Tab "${tab.label}", Field ${fieldIndex + 1}`;
+      
+      if (!field.key || typeof field.key !== 'string') {
+        errors.push(`${fieldPath}: key is required and must be a string`);
+      }
+      
+      if (!field.label || typeof field.label !== 'string') {
+        errors.push(`${fieldPath}: label is required and must be a string`);
+      }
+      
+      const validTypes = ['text', 'textarea', 'checkbox', 'select', 'multiselect', 'multi-entry', 'number', 'date'];
+      if (!validTypes.includes(field.type)) {
+        errors.push(`${fieldPath}: type must be one of: ${validTypes.join(', ')}`);
+      }
+      
+      // Validate type-specific properties
+      if (['select', 'multiselect'].includes(field.type)) {
+        if (!field.options || !Array.isArray(field.options) || field.options.length === 0) {
+          errors.push(`${fieldPath}: options array is required for ${field.type} fields`);
+        } else {
+          field.options.forEach((option, optIndex) => {
+            if (!option.value || !option.label) {
+              errors.push(`${fieldPath}, Option ${optIndex + 1}: value and label are required`);
+            }
+          });
+        }
+      }
+      
+      if (field.type === 'multi-entry') {
+        if (!field.entryConfig || !field.entryConfig.baseOptions || !Array.isArray(field.entryConfig.baseOptions)) {
+          errors.push(`${fieldPath}: multi-entry fields require entryConfig.baseOptions array`);
+        }
+        
+        if (!field.entryConfig.remarkLabel) {
+          errors.push(`${fieldPath}: multi-entry fields require entryConfig.remarkLabel`);
+        }
+      }
+      
+      if (typeof field.position !== 'number' || field.position < 0) {
+        errors.push(`${fieldPath}: position must be a non-negative number`);
+      }
+    });
+    
+    // Check for duplicate field keys within tab
+    const fieldKeys = tab.fields.map(f => f.key);
+    const uniqueFieldKeys = [...new Set(fieldKeys)];
+    if (fieldKeys.length !== uniqueFieldKeys.length) {
+      errors.push(`Tab "${tab.label}": field keys must be unique within tab`);
+    }
+  });
+  
+  // Check for duplicate tab keys
+  const tabKeys = customFields.tabs.map(t => t.key);
+  const uniqueTabKeys = [...new Set(tabKeys)];
+  if (tabKeys.length !== uniqueTabKeys.length) {
+    errors.push('Custom tab keys must be unique');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Enhanced membership config validation including custom fields
  */
 function validateMembershipConfig(config) {
   const errors = [];
@@ -17,13 +106,13 @@ function validateMembershipConfig(config) {
     return { isValid: false, errors };
   }
   
-  const { statuses, defaultCurrency, joiningSources, leavingReasons } = config.membershipConfig;
+  const { statuses, defaultCurrency, joiningSources, leavingReasons, customFields } = config.membershipConfig;
   
-  // Validate status array (existing code)
+  // Existing validation (statuses, sources, reasons) - keeping original code
   if (!Array.isArray(statuses) || statuses.length === 0) {
     errors.push('At least one membership status is required');
   } else {
-    // Status-specific validation
+    // Status-specific validation (existing)
     statuses.forEach((status, index) => {
       if (!status.key || typeof status.key !== 'string') {
         errors.push(`Status ${index + 1}: key is required and must be a string`);
@@ -77,7 +166,7 @@ function validateMembershipConfig(config) {
     }
   }
   
-  // ✅ NEW: Validate joining sources
+  // Existing joining sources validation
   if (joiningSources && Array.isArray(joiningSources)) {
     joiningSources.forEach((source, index) => {
       if (!source.key || typeof source.key !== 'string') {
@@ -87,13 +176,8 @@ function validateMembershipConfig(config) {
       if (!source.label || typeof source.label !== 'string') {
         errors.push(`Joining source ${index + 1}: label is required and must be a string`);
       }
-      
-      if (source.color && typeof source.color !== 'string') {
-        errors.push(`Joining source ${index + 1}: color must be a string if provided`);
-      }
     });
     
-    // Check for duplicate keys in joining sources
     const sourceKeys = joiningSources.map(s => s.key);
     const uniqueSourceKeys = [...new Set(sourceKeys)];
     if (sourceKeys.length !== uniqueSourceKeys.length) {
@@ -101,7 +185,7 @@ function validateMembershipConfig(config) {
     }
   }
   
-  // ✅ NEW: Validate leaving reasons
+  // Existing leaving reasons validation
   if (leavingReasons && Array.isArray(leavingReasons)) {
     leavingReasons.forEach((reason, index) => {
       if (!reason.key || typeof reason.key !== 'string') {
@@ -111,17 +195,8 @@ function validateMembershipConfig(config) {
       if (!reason.label || typeof reason.label !== 'string') {
         errors.push(`Leaving reason ${index + 1}: label is required and must be a string`);
       }
-      
-      if (reason.color && typeof reason.color !== 'string') {
-        errors.push(`Leaving reason ${index + 1}: color must be a string if provided`);
-      }
-      
-      if (reason.requiresDate && typeof reason.requiresDate !== 'boolean') {
-        errors.push(`Leaving reason ${index + 1}: requiresDate must be a boolean if provided`);
-      }
     });
     
-    // Check for duplicate keys in leaving reasons
     const reasonKeys = leavingReasons.map(r => r.key);
     const uniqueReasonKeys = [...new Set(reasonKeys)];
     if (reasonKeys.length !== uniqueReasonKeys.length) {
@@ -134,6 +209,12 @@ function validateMembershipConfig(config) {
     errors.push('defaultCurrency must be one of: EUR, USD, CHF, GBP');
   }
   
+  // ✅ NEW: Validate custom fields
+  const customFieldsValidation = validateCustomFields(customFields);
+  if (!customFieldsValidation.isValid) {
+    errors.push(...customFieldsValidation.errors);
+  }
+  
   return {
     isValid: errors.length === 0,
     errors
@@ -141,10 +222,10 @@ function validateMembershipConfig(config) {
 }
 
 /**
- * Generate default configuration with predefined sources and reasons
+ * Generate default configuration with custom fields for breeding club
  */
 function getDefaultMembershipConfig(orgType = 'verein') {
-  return {
+  const baseConfig = {
     statuses: [
       { 
         key: 'active', 
@@ -181,123 +262,217 @@ function getDefaultMembershipConfig(orgType = 'verein') {
       }
     ],
     joiningSources: [
-      { 
-        key: 'website', 
-        label: 'Internet / Webseite', 
-        color: 'blue',
-        description: 'Anmeldung über die Vereinswebseite',
-        active: true
-      },
-      { 
-        key: 'social_media', 
-        label: 'Social Media', 
-        color: 'purple',
-        description: 'Gefunden über soziale Medien (Facebook, Instagram, etc.)',
-        active: true
-      },
-      { 
-        key: 'advertising', 
-        label: 'Werbung Geflügelzeitung', 
-        color: 'yellow',
-        description: 'Durch Werbeanzeige in Fachzeitschrift',
-        active: true
-      },
-      { 
-        key: 'recommendation', 
-        label: 'Empfehlung SV-Mitglied', 
-        color: 'green',
-        description: 'Weiterempfehlung durch bestehendes Mitglied',
-        active: true
-      },
-      { 
-        key: 'event', 
-        label: 'Veranstaltung / Ausstellung', 
-        color: 'orange',
-        description: 'Kennengelernt auf Vereinsveranstaltung',
-        active: true
-      },
-      { 
-        key: 'personal_contact', 
-        label: 'Persönlicher Kontakt', 
-        color: 'cyan',
-        description: 'Direkter persönlicher Kontakt',
-        active: true
-      },
-      { 
-        key: 'other', 
-        label: 'Sonstiges', 
-        color: 'gray',
-        description: 'Andere Beitrittsquelle',
-        active: true
-      }
+      { key: 'website', label: 'Internet / Webseite', color: 'blue', description: 'Anmeldung über die Vereinswebseite', active: true },
+      { key: 'social_media', label: 'Social Media', color: 'purple', description: 'Gefunden über soziale Medien', active: true },
+      { key: 'advertising', label: 'Werbung Geflügelzeitung', color: 'yellow', description: 'Durch Werbeanzeige in Fachzeitschrift', active: true },
+      { key: 'recommendation', label: 'Empfehlung SV-Mitglied', color: 'green', description: 'Weiterempfehlung durch bestehendes Mitglied', active: true },
+      { key: 'event', label: 'Veranstaltung / Ausstellung', color: 'orange', description: 'Kennengelernt auf Vereinsveranstaltung', active: true },
+      { key: 'other', label: 'Sonstiges', color: 'gray', description: 'Andere Beitrittsquelle', active: true }
     ],
     leavingReasons: [
-      { 
-        key: 'voluntary_resignation', 
-        label: 'Freiwillige Kündigung', 
-        color: 'blue',
-        description: 'Mitglied hat selbst gekündigt',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'stopped_breeding', 
-        label: 'Zuchtaufgabe', 
-        color: 'orange',
-        description: 'Aufgabe der Geflügelzucht',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'deceased', 
-        label: 'Verstorben', 
-        color: 'gray',
-        description: 'Mitglied ist verstorben',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'expelled', 
-        label: 'Kündigung durch Verein', 
-        color: 'red',
-        description: 'Ausschluss durch Vereinsvorstand',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'non_payment', 
-        label: 'Beitragsnichtzahlung', 
-        color: 'red',
-        description: 'Kündigung wegen Zahlungsverzug',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'relocation', 
-        label: 'Umzug', 
-        color: 'blue',
-        description: 'Wegzug aus dem Vereinsgebiet',
-        requiresDate: true,
-        active: true
-      },
-      { 
-        key: 'no_reason', 
-        label: 'Keine Angabe', 
-        color: 'gray',
-        description: 'Grund nicht bekannt oder nicht angegeben',
-        requiresDate: false,
-        active: true
-      }
+      { key: 'voluntary_resignation', label: 'Freiwillige Kündigung', color: 'blue', description: 'Mitglied hat selbst gekündigt', requiresDate: true, active: true },
+      { key: 'stopped_breeding', label: 'Zuchtaufgabe', color: 'orange', description: 'Aufgabe der Geflügelzucht', requiresDate: true, active: true },
+      { key: 'deceased', label: 'Verstorben', color: 'gray', description: 'Mitglied ist verstorben', requiresDate: true, active: true },
+      { key: 'expelled', label: 'Kündigung durch Verein', color: 'red', description: 'Ausschluss durch Vereinsvorstand', requiresDate: true, active: true },
+      { key: 'no_reason', label: 'Keine Angabe', color: 'gray', description: 'Grund nicht bekannt', requiresDate: false, active: true }
     ],
     defaultCurrency: 'EUR'
   };
+
+  // ✅ NEW: Add custom fields based on organization type
+  if (orgType === 'verein') {
+    baseConfig.customFields = {
+      tabs: [
+        {
+          key: 'breeding_data',
+          label: 'Zuchtdaten',
+          icon: '🐓',
+          description: 'Informationen zu gezüchteten Rassen und Zuchtaktivitäten',
+          position: 1,
+          active: true,
+          fields: [
+            {
+              key: 'breeding_species',
+              label: 'Gezüchtete Rassen',
+              type: 'multi-entry',
+              position: 1,
+              required: false,
+              description: 'Welche Rassen züchten Sie? Fügen Sie Bemerkungen hinzu.',
+              entryConfig: {
+                baseOptions: [
+                  { value: 'huhn', label: 'Huhn' },
+                  { value: 'ente', label: 'Ente' },
+                  { value: 'gans', label: 'Gans' },
+                  { value: 'truthahn', label: 'Truthahn' },
+                  { value: 'perlhuhn', label: 'Perlhuhn' },
+                  { value: 'fasan', label: 'Fasan' },
+                  { value: 'wachtel', label: 'Wachtel' },
+                  { value: 'taube', label: 'Taube' }
+                ],
+                remarkLabel: 'Bemerkung/Rasse Details',
+                allowMultiple: true,
+                addButtonText: 'Weitere Rasse hinzufügen'
+              }
+            },
+            {
+              key: 'breeding_experience',
+              label: 'Zuchterfahrung (Jahre)',
+              type: 'number',
+              position: 2,
+              required: false,
+              description: 'Wie viele Jahre Zuchterfahrung haben Sie?',
+              min: 0,
+              max: 80
+            },
+            {
+              key: 'exhibition_participation',
+              label: 'Ausstellungsteilnahme',
+              type: 'checkbox',
+              position: 3,
+              required: false,
+              description: 'Nehmen Sie regelmäßig an Geflügelausstellungen teil?'
+            },
+            {
+              key: 'breeding_goals',
+              label: 'Zuchtziele',
+              type: 'textarea',
+              position: 4,
+              required: false,
+              description: 'Beschreiben Sie Ihre Zuchtziele und besonderen Interessen',
+              rows: 3
+            },
+            {
+              key: 'facility_type',
+              label: 'Art der Haltung',
+              type: 'select',
+              position: 5,
+              required: false,
+              description: 'Wie halten Sie Ihr Geflügel?',
+              options: [
+                { value: 'freiland', label: 'Freilandhaltung' },
+                { value: 'voliere', label: 'Volierenhaltung' },
+                { value: 'stall', label: 'Stallhaltung' },
+                { value: 'gemischt', label: 'Gemischte Haltung' }
+              ]
+            }
+          ]
+        },
+        {
+          key: 'contact_preferences',
+          label: 'Kommunikation',
+          icon: '📧',
+          description: 'Einstellungen für Kommunikation und Newsletter',
+          position: 2,
+          active: true,
+          fields: [
+            {
+              key: 'newsletter_subscription',
+              label: 'Newsletter abonnieren',
+              type: 'checkbox',
+              position: 1,
+              required: false,
+              description: 'Möchten Sie unseren monatlichen Newsletter erhalten?'
+            },
+            {
+              key: 'communication_channels',
+              label: 'Bevorzugte Kommunikationswege',
+              type: 'multiselect',
+              position: 2,
+              required: false,
+              description: 'Wie möchten Sie kontaktiert werden?',
+              options: [
+                { value: 'email', label: 'E-Mail' },
+                { value: 'phone', label: 'Telefon' },
+                { value: 'letter', label: 'Brief' },
+                { value: 'whatsapp', label: 'WhatsApp' }
+              ]
+            },
+            {
+              key: 'meeting_availability',
+              label: 'Verfügbarkeit für Vereinstreffen',
+              type: 'select',
+              position: 3,
+              required: false,
+              description: 'Wann können Sie normalerweise an Vereinstreffen teilnehmen?',
+              options: [
+                { value: 'weekday_evening', label: 'Wochentag abends' },
+                { value: 'saturday_morning', label: 'Samstag vormittag' },
+                { value: 'saturday_afternoon', label: 'Samstag nachmittag' },
+                { value: 'sunday_morning', label: 'Sonntag vormittag' },
+                { value: 'sunday_afternoon', label: 'Sonntag nachmittag' },
+                { value: 'flexible', label: 'Flexibel' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+  } else {
+    // For companies, different custom fields
+    baseConfig.customFields = {
+      tabs: [
+        {
+          key: 'business_data',
+          label: 'Unternehmensdaten',
+          icon: '🏢',
+          description: 'Geschäftsspezifische Informationen',
+          position: 1,
+          active: true,
+          fields: [
+            {
+              key: 'company_size',
+              label: 'Unternehmensgröße',
+              type: 'select',
+              position: 1,
+              required: false,
+              description: 'Wie viele Mitarbeiter hat Ihr Unternehmen?',
+              options: [
+                { value: 'micro', label: '1-9 Mitarbeiter' },
+                { value: 'small', label: '10-49 Mitarbeiter' },
+                { value: 'medium', label: '50-249 Mitarbeiter' },
+                { value: 'large', label: '250+ Mitarbeiter' }
+              ]
+            },
+            {
+              key: 'business_sector',
+              label: 'Branche',
+              type: 'multiselect',
+              position: 2,
+              required: false,
+              description: 'In welchen Branchen sind Sie tätig?',
+              options: [
+                { value: 'technology', label: 'Technologie' },
+                { value: 'healthcare', label: 'Gesundheitswesen' },
+                { value: 'finance', label: 'Finanzwesen' },
+                { value: 'education', label: 'Bildung' },
+                { value: 'retail', label: 'Einzelhandel' },
+                { value: 'manufacturing', label: 'Produktion' },
+                { value: 'services', label: 'Dienstleistungen' }
+              ]
+            },
+            {
+              key: 'annual_revenue',
+              label: 'Jahresumsatz (EUR)',
+              type: 'number',
+              position: 3,
+              required: false,
+              description: 'Geschätzter Jahresumsatz',
+              min: 0
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  return baseConfig;
 }
 
-// Routes definieren
+// Enhanced routes with custom fields support
 function setupRoutes(models) {
   const { Organization } = models;
 
-  // GET /api/organization/config - Get organization configuration (existing, unchanged)
+  // GET /api/organization/config - Enhanced with custom fields
   router.get('/', async (req, res) => {
     try {
       const organization = await Organization.findOne({
@@ -311,7 +486,6 @@ function setupRoutes(models) {
         });
       }
       
-      // Extract configuration data
       const config = organization.settings || {};
       
       res.json({
@@ -321,6 +495,11 @@ function setupRoutes(models) {
           id: organization.id,
           name: organization.name,
           type: organization.type
+        },
+        customFieldsInfo: {
+          tabCount: config.membershipConfig?.customFields?.tabs?.length || 0,
+          fieldCount: config.membershipConfig?.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
+          activeTabCount: config.membershipConfig?.customFields?.tabs?.filter(tab => tab.active !== false)?.length || 0
         }
       });
     } catch (error) {
@@ -332,7 +511,36 @@ function setupRoutes(models) {
     }
   });
 
-  // PUT /api/organization/config - Update organization configuration (enhanced)
+  // ✅ NEW: GET /api/organization/config/custom-fields - Get custom fields configuration
+  router.get('/custom-fields', async (req, res) => {
+    try {
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' });
+      }
+      
+      const customFields = organization.settings?.membershipConfig?.customFields || { tabs: [] };
+      const activeTabs = customFields.tabs?.filter(tab => tab.active !== false) || [];
+      
+      res.json({
+        customFields,
+        stats: {
+          totalTabs: customFields.tabs?.length || 0,
+          activeTabs: activeTabs.length,
+          totalFields: customFields.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
+          activeFields: activeTabs.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0)
+        }
+      });
+    } catch (error) {
+      console.error('❌ [GET_CUSTOM_FIELDS] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch custom fields',
+        details: error.message
+      });
+    }
+  });
+
+  // PUT /api/organization/config - Enhanced validation
   router.put('/', async (req, res) => {
     try {
       const { config } = req.body;
@@ -343,7 +551,7 @@ function setupRoutes(models) {
         });
       }
       
-      // Validate configuration
+      // Enhanced validation with custom fields
       const validation = validateMembershipConfig(config);
       if (!validation.isValid) {
         return res.status(400).json({ 
@@ -352,7 +560,6 @@ function setupRoutes(models) {
         });
       }
       
-      // Find organization
       const organization = await Organization.findOne();
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found' });
@@ -386,6 +593,8 @@ function setupRoutes(models) {
           billingEnabledStatuses: config.membershipConfig?.statuses?.filter(s => s.billing?.active)?.length || 0,
           joiningSourcesCount: config.membershipConfig?.joiningSources?.length || 0,
           leavingReasonsCount: config.membershipConfig?.leavingReasons?.length || 0,
+          customFieldsTabCount: config.membershipConfig?.customFields?.tabs?.length || 0,
+          customFieldsTotalFields: config.membershipConfig?.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
           defaultCurrency: config.membershipConfig?.defaultCurrency || 'EUR'
         }
       });
@@ -405,57 +614,7 @@ function setupRoutes(models) {
     }
   });
 
-  // ✅ NEW: GET /api/organization/config/joining-sources - Get joining sources
-  router.get('/joining-sources', async (req, res) => {
-    try {
-      const organization = await Organization.findOne();
-      if (!organization) {
-        return res.status(404).json({ error: 'Organization not found' });
-      }
-      
-      const joiningSources = organization.settings?.membershipConfig?.joiningSources || [];
-      const activeSources = joiningSources.filter(source => source.active !== false);
-      
-      res.json({
-        joiningSources: activeSources,
-        totalSources: joiningSources.length,
-        activeSources: activeSources.length
-      });
-    } catch (error) {
-      console.error('❌ [GET_JOINING_SOURCES] Error:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch joining sources',
-        details: error.message
-      });
-    }
-  });
-
-  // ✅ NEW: GET /api/organization/config/leaving-reasons - Get leaving reasons
-  router.get('/leaving-reasons', async (req, res) => {
-    try {
-      const organization = await Organization.findOne();
-      if (!organization) {
-        return res.status(404).json({ error: 'Organization not found' });
-      }
-      
-      const leavingReasons = organization.settings?.membershipConfig?.leavingReasons || [];
-      const activeReasons = leavingReasons.filter(reason => reason.active !== false);
-      
-      res.json({
-        leavingReasons: activeReasons,
-        totalReasons: leavingReasons.length,
-        activeReasons: activeReasons.length
-      });
-    } catch (error) {
-      console.error('❌ [GET_LEAVING_REASONS] Error:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch leaving reasons',
-        details: error.message
-      });
-    }
-  });
-
-  // ✅ NEW: POST /api/organization/config/reset-defaults - Reset to default configuration
+  // ✅ NEW: POST /api/organization/config/reset-defaults - Enhanced with custom fields
   router.post('/reset-defaults', async (req, res) => {
     try {
       const organization = await Organization.findOne();
@@ -498,6 +657,8 @@ function setupRoutes(models) {
           statusCount: defaultConfig.membershipConfig.statuses.length,
           joiningSourcesCount: defaultConfig.membershipConfig.joiningSources.length,
           leavingReasonsCount: defaultConfig.membershipConfig.leavingReasons.length,
+          customFieldsTabCount: defaultConfig.membershipConfig.customFields?.tabs?.length || 0,
+          customFieldsTotalFields: defaultConfig.membershipConfig.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
           backupCreated: true
         }
       });
@@ -510,7 +671,7 @@ function setupRoutes(models) {
     }
   });
 
-  // POST /api/organization/config/validate - Enhanced validation
+  // Enhanced validation endpoint
   router.post('/validate', async (req, res) => {
     try {
       const { config } = req.body;
@@ -523,10 +684,10 @@ function setupRoutes(models) {
       
       const validation = validateMembershipConfig(config);
       
-      // Calculate additional statistics
+      // Calculate additional statistics including custom fields
       let stats = {};
       if (validation.isValid && config.membershipConfig) {
-        const { statuses, joiningSources, leavingReasons } = config.membershipConfig;
+        const { statuses, joiningSources, leavingReasons, customFields } = config.membershipConfig;
         
         stats = {
           totalStatuses: statuses?.length || 0,
@@ -537,6 +698,9 @@ function setupRoutes(models) {
           totalLeavingReasons: leavingReasons?.length || 0,
           activeLeavingReasons: leavingReasons?.filter(r => r.active !== false).length || 0,
           reasonsRequiringDate: leavingReasons?.filter(r => r.requiresDate).length || 0,
+          customFieldsTabCount: customFields?.tabs?.length || 0,
+          customFieldsTotalFields: customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
+          customFieldsActiveTabCount: customFields?.tabs?.filter(tab => tab.active !== false)?.length || 0,
           uniqueFrequencies: [...new Set(statuses?.map(s => s.billing?.frequency).filter(Boolean))] || [],
           totalFeesIfAllActive: statuses
             ?.filter(s => s.billing?.active)
@@ -559,83 +723,12 @@ function setupRoutes(models) {
     }
   });
 
-  // GET /api/organization/member-statuses - Enhanced with sources and reasons
-  router.get('/member-statuses', async (req, res) => {
-    try {
-      const organization = await Organization.findOne();
-      if (!organization) {
-        return res.status(404).json({ error: 'Organization not found' });
-      }
-      
-      const membershipConfig = organization.settings?.membershipConfig || {};
-      const statuses = membershipConfig.statuses || [];
-      const joiningSources = membershipConfig.joiningSources || [];
-      const leavingReasons = membershipConfig.leavingReasons || [];
-      const defaultCurrency = membershipConfig.defaultCurrency || 'EUR';
-      
-      // Format status data for frontend
-      const formattedStatuses = statuses.map(status => ({
-        key: status.key,
-        label: status.label,
-        color: status.color,
-        description: status.description,
-        isDefault: status.default || false,
-        billing: {
-          active: status.billing?.active || false,
-          fee: status.billing?.fee || 0,
-          frequency: status.billing?.frequency || 'yearly',
-          dueDay: status.billing?.dueDay || 1,
-          currency: defaultCurrency
-        }
-      }));
-
-      // Format joining sources
-      const formattedJoiningSources = joiningSources
-        .filter(source => source.active !== false)
-        .map(source => ({
-          key: source.key,
-          label: source.label,
-          color: source.color,
-          description: source.description
-        }));
-
-      // Format leaving reasons
-      const formattedLeavingReasons = leavingReasons
-        .filter(reason => reason.active !== false)
-        .map(reason => ({
-          key: reason.key,
-          label: reason.label,
-          color: reason.color,
-          description: reason.description,
-          requiresDate: reason.requiresDate || false
-        }));
-      
-      res.json({
-        statuses: formattedStatuses,
-        joiningSources: formattedJoiningSources,
-        leavingReasons: formattedLeavingReasons,
-        defaultCurrency,
-        counts: {
-          totalStatuses: formattedStatuses.length,
-          billingEnabledCount: formattedStatuses.filter(s => s.billing.active).length,
-          joiningSourcesCount: formattedJoiningSources.length,
-          leavingReasonsCount: formattedLeavingReasons.length
-        }
-      });
-    } catch (error) {
-      console.error('❌ [GET_MEMBER_STATUSES] Error:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch member statuses',
-        details: error.message
-      });
-    }
-  });
-
   return router;
 }
 
 module.exports = {
   validateMembershipConfig,
+  validateCustomFields,
   getDefaultMembershipConfig,
   setupRoutes
 };

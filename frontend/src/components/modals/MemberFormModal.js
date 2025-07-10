@@ -1,8 +1,10 @@
-// frontend/src/components/modals/MemberFormModal.js
+// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Custom Fields
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
 import { useIBANValidation } from '../../utils/ibanUtils';
+// ✅ Custom Fields Import (wenn verfügbar)
+// import { CustomFieldRenderer, validateCustomField } from '../fields/CustomFieldComponents';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -10,11 +12,13 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const { t, organization } = useOrgTranslation();
   const isEditMode = !!member;
   
-  // State for configured member statuses
+  // State for configured member statuses and custom fields
   const [memberStatuses, setMemberStatuses] = useState([]);
+  const [customFieldsConfig, setCustomFieldsConfig] = useState({ tabs: [] });
   const [loadingStatuses, setLoadingStatuses] = useState(true);
+  const [loadingCustomFields, setLoadingCustomFields] = useState(true);
   
-  // Form States
+  // Form States (enhanced with custom fields)
   const [formData, setFormData] = useState({
     // Persönliche Daten
     salutation: '',
@@ -39,7 +43,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     },
     membershipData: {
       joinDate: new Date().toISOString().split('T')[0],
-      membershipStatus: '', // This will use configured statuses
+      membershipStatus: '',
       paymentMethod: 'Überweisung',
       bankDetails: {
         accountHolder: '',
@@ -47,7 +51,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         bic: '',
         bankName: '',
         sepaActive: false
-      }
+      },
+      // ✅ NEW: Custom Fields Data
+      customFields: {}
     }
   });
 
@@ -66,6 +72,26 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     formatted: ibanFormatted
   } = useIBANValidation(formData.membershipData?.bankDetails?.iban || '');
 
+  // ✅ NEW: Load Custom Fields Configuration
+  useEffect(() => {
+    const fetchCustomFields = async () => {
+      try {
+        setLoadingCustomFields(true);
+        const response = await axios.get(`${API_URL}/organization/config/custom-fields`);
+        setCustomFieldsConfig(response.data.customFields || { tabs: [] });
+      } catch (error) {
+        console.error('Error fetching custom fields config:', error);
+        setCustomFieldsConfig({ tabs: [] });
+      } finally {
+        setLoadingCustomFields(false);
+      }
+    };
+
+    if (isOpen) {
+      fetchCustomFields();
+    }
+  }, [isOpen]);
+
   // Load configured member statuses
   useEffect(() => {
     const fetchMemberStatuses = async () => {
@@ -74,7 +100,6 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         const response = await axios.get(`${API_URL}/organization/config/member-statuses`);
         setMemberStatuses(response.data.statuses || []);
         
-        // Set default status if not already set
         if (!formData.membershipData.membershipStatus && response.data.statuses.length > 0) {
           const defaultStatus = response.data.statuses.find(s => s.isDefault) || response.data.statuses[0];
           setFormData(prev => ({
@@ -97,25 +122,12 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     }
   }, [isOpen]);
 
-  // Calculate age
-  const calculateAge = (birthDate) => {
-    if (!birthDate) return null;
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
   // Load member data in edit mode
   useEffect(() => {
     if (isEditMode && member) {
       const membershipData = member.membershipData || {
         joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
-        membershipStatus: member.status || '', // Use actual status
+        membershipStatus: member.status || '',
         paymentMethod: 'Überweisung',
         bankDetails: {
           accountHolder: '',
@@ -123,7 +135,8 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           bic: '',
           bankName: '',
           sepaActive: false
-        }
+        },
+        customFields: {} // Initialize custom fields
       };
 
       if (!membershipData.bankDetails) {
@@ -134,6 +147,11 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           bankName: '',
           sepaActive: false
         };
+      }
+
+      // ✅ NEW: Load existing custom fields data
+      if (!membershipData.customFields) {
+        membershipData.customFields = {};
       }
 
       setFormData({
@@ -198,7 +216,8 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               bic: '',
               bankName: '',
               sepaActive: false
-            }
+            },
+            customFields: {} // Reset custom fields
           }
         });
         setError(null);
@@ -209,9 +228,121 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     }
   }, [isOpen, memberStatuses]);
 
+  // ✅ NEW: Custom Fields Handlers
+  const updateCustomFieldValue = (tabKey, fieldKey, value) => {
+    setFormData(prev => ({
+      ...prev,
+      membershipData: {
+        ...prev.membershipData,
+        customFields: {
+          ...prev.membershipData.customFields,
+          [tabKey]: {
+            ...prev.membershipData.customFields[tabKey],
+            [fieldKey]: value
+          }
+        }
+      }
+    }));
+  };
+
+  const getCustomFieldValue = (tabKey, fieldKey) => {
+    return formData.membershipData?.customFields?.[tabKey]?.[fieldKey];
+  };
+
+  // ✅ FALLBACK: Simple Custom Field Validation (wenn CustomFieldComponents nicht verfügbar)
+  const validateCustomField = (field, value) => {
+    if (field.required && (!value || (typeof value === 'string' && !value.trim()))) {
+      return t('validation.required', 'Pflichtfeld');
+    }
+    
+    if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      return t('validation.invalidEmail', 'Ungültige E-Mail-Adresse');
+    }
+    
+    if (field.type === 'number' && value) {
+      const num = parseFloat(value);
+      if (isNaN(num)) {
+        return 'Ungültige Zahl';
+      }
+      if (field.min !== undefined && num < field.min) {
+        return `Minimum: ${field.min}`;
+      }
+      if (field.max !== undefined && num > field.max) {
+        return `Maximum: ${field.max}`;
+      }
+    }
+    
+    return null;
+  };
+
+  // ✅ FALLBACK: Simple Custom Field Renderer
+  const CustomFieldRenderer = ({ field, value, onChange, error }) => {
+    const commonProps = {
+      value: value || '',
+      onChange: (e) => onChange(e.target.value),
+      className: `w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+        error ? 'border-red-300 bg-red-50' : 'border-gray-300'
+      }`,
+      disabled: loading
+    };
+
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {field.label}
+          {field.required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+        
+        {field.type === 'textarea' ? (
+          <textarea
+            {...commonProps}
+            rows={field.rows || 3}
+            placeholder={field.placeholder}
+          />
+        ) : field.type === 'select' ? (
+          <select {...commonProps}>
+            <option value="">{field.placeholder || 'Bitte wählen...'}</option>
+            {(field.options || []).map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : field.type === 'checkbox' ? (
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={!!value}
+              onChange={(e) => onChange(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+              disabled={loading}
+            />
+            <span className="text-sm">{field.placeholder || field.label}</span>
+          </label>
+        ) : (
+          <input
+            type={field.type || 'text'}
+            {...commonProps}
+            placeholder={field.placeholder}
+          />
+        )}
+        
+        {field.description && (
+          <p className="mt-1 text-xs text-gray-500">{field.description}</p>
+        )}
+        
+        {error && (
+          <p className="mt-1 text-sm text-red-600">{error}</p>
+        )}
+      </div>
+    );
+  };
+
+  // Enhanced form validation with custom fields
   const validateForm = () => {
     const errors = {};
     
+    // Basic validation (existing)
     if (!formData.firstName.trim()) {
       errors.firstName = t('validation.required', 'Pflichtfeld');
     }
@@ -232,14 +363,38 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       errors.iban = ibanError || t('validation.invalidIban', 'Ungültige IBAN');
     }
     
+    // ✅ NEW: Custom Fields Validation
+    customFieldsConfig.tabs?.forEach(tab => {
+      if (tab.active !== false) {
+        tab.fields?.forEach(field => {
+          const value = getCustomFieldValue(tab.key, field.key);
+          const fieldError = validateCustomField(field, value);
+          if (fieldError) {
+            errors[`customField_${tab.key}_${field.key}`] = fieldError;
+          }
+        });
+      }
+    });
+    
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
+  // Enhanced submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
+      // Find first tab with error and switch to it
+      const firstErrorKey = Object.keys(fieldErrors)[0];
+      if (firstErrorKey && firstErrorKey.startsWith('customField_')) {
+        const parts = firstErrorKey.split('_');
+        const errorTabKey = parts[1];
+        const customTab = customFieldsConfig.tabs?.find(tab => tab.key === errorTabKey);
+        if (customTab) {
+          setActiveTab(`custom_${customTab.key}`);
+        }
+      }
       return;
     }
     
@@ -259,7 +414,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         landline: formData.landline || undefined,
         mobile: formData.mobile || undefined,
         website: formData.website || undefined,
-        status: formData.membershipData.membershipStatus || 'active', // Use configured status
+        status: formData.membershipData.membershipStatus || 'active',
         memberNumber: formData.memberNumber || undefined,
         address: formData.address,
         membershipData: {
@@ -276,7 +431,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         }
       };
       
-      console.log('📤 Submitting member data:', submitData);
+      console.log('📤 Submitting member data with custom fields:', submitData);
       
       const response = isEditMode
         ? await axios.put(`${API_URL}/members/${member.id}`, submitData)
@@ -332,14 +487,67 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
 
   if (!isOpen) return null;
 
+  // Calculate age
+  const calculateAge = (birthDate) => {
+    if (!birthDate) return null;
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   const age = calculateAge(formData.birthDate);
-  
-  // Get selected status details
   const selectedStatus = memberStatuses.find(s => s.key === formData.membershipData.membershipStatus);
+
+  // ✅ NEW: Enhanced tab system with custom tabs
+  const baseTabs = [
+    {
+      id: 'personal',
+      label: t('members.tabs.personal', 'Person'),
+      icon: '👤'
+    },
+    {
+      id: 'contact',
+      label: t('members.tabs.contact', 'Kontakt'),
+      icon: '📞'
+    },
+    {
+      id: 'address',
+      label: t('members.tabs.address', 'Anschrift'),
+      icon: '🏠'
+    },
+    {
+      id: 'membership',
+      label: t('members.tabs.membership', 'Mitgliedschaft'),
+      icon: '👥'
+    },
+    {
+      id: 'bank',
+      label: t('members.tabs.bank', 'Bankdaten'),
+      icon: '🏦'
+    }
+  ];
+
+  // Add custom tabs
+  const customTabs = (customFieldsConfig.tabs || [])
+    .filter(tab => tab.active !== false)
+    .sort((a, b) => (a.position || 0) - (b.position || 0))
+    .map(tab => ({
+      id: `custom_${tab.key}`,
+      label: tab.label,
+      icon: tab.icon || '📝',
+      customTab: tab
+    }));
+
+  const allTabs = [...baseTabs, ...customTabs];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
         {/* Modal Header */}
         <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
@@ -359,59 +567,32 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Enhanced Tab Navigation */}
         <div className="bg-gray-100 px-6 py-2 border-b border-gray-200">
-          <nav className="flex space-x-4">
-            <button
-              onClick={() => setActiveTab('personal')}
-              className={`px-3 py-2 text-sm font-medium rounded-md ${
-                activeTab === 'personal' 
-                  ? 'bg-white text-blue-600 shadow' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {t('members.tabs.personal', 'Person')}
-            </button>
-            <button
-              onClick={() => setActiveTab('contact')}
-              className={`px-3 py-2 text-sm font-medium rounded-md ${
-                activeTab === 'contact' 
-                  ? 'bg-white text-blue-600 shadow' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {t('members.tabs.contact', 'Kontakt')}
-            </button>
-            <button
-              onClick={() => setActiveTab('address')}
-              className={`px-3 py-2 text-sm font-medium rounded-md ${
-                activeTab === 'address' 
-                  ? 'bg-white text-blue-600 shadow' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {t('members.tabs.address', 'Anschrift')}
-            </button>
-            <button
-              onClick={() => setActiveTab('membership')}
-              className={`px-3 py-2 text-sm font-medium rounded-md ${
-                activeTab === 'membership' 
-                  ? 'bg-white text-blue-600 shadow' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {t('members.tabs.membership', 'Mitgliedschaft')}
-            </button>
-            <button
-              onClick={() => setActiveTab('bank')}
-              className={`px-3 py-2 text-sm font-medium rounded-md ${
-                activeTab === 'bank' 
-                  ? 'bg-white text-blue-600 shadow' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {t('members.tabs.bank', 'Bankdaten')}
-            </button>
+          <nav className="flex space-x-4 overflow-x-auto">
+            {allTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap flex items-center ${
+                  activeTab === tab.id 
+                    ? 'bg-white text-blue-600 shadow' 
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <span className="mr-2">{tab.icon}</span>
+                {tab.label}
+                {/* Show error indicator for tabs with errors */}
+                {Object.keys(fieldErrors).some(key => 
+                  tab.customTab ? key.startsWith(`customField_${tab.customTab.key}_`) : 
+                  (tab.id === 'contact' && ['email', 'website'].includes(key.split('_')[0])) ||
+                  (tab.id === 'personal' && ['firstName', 'lastName', 'memberNumber'].includes(key.split('_')[0])) ||
+                  (tab.id === 'bank' && key === 'iban')
+                ) && (
+                  <span className="ml-2 text-red-500">⚠️</span>
+                )}
+              </button>
+            ))}
           </nav>
         </div>
 
@@ -427,7 +608,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Personal Tab */}
+            {/* ===== ALLE ORIGINAL TABS VOLLSTÄNDIG ===== */}
+            
+            {/* Personal Tab - VOLLSTÄNDIG */}
             {activeTab === 'personal' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -571,7 +754,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Contact Tab */}
+            {/* Contact Tab - VOLLSTÄNDIG */}
             {activeTab === 'contact' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -645,7 +828,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Address Tab */}
+            {/* Address Tab - VOLLSTÄNDIG */}
             {activeTab === 'address' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -716,7 +899,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Membership Tab */}
+            {/* Membership Tab - VOLLSTÄNDIG */}
             {activeTab === 'membership' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -828,7 +1011,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Bank Tab */}
+            {/* Bank Tab - VOLLSTÄNDIG */}
             {activeTab === 'bank' && (
               <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-lg mb-4">
@@ -979,34 +1162,117 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                 </div>
               </div>
             )}
+
+            {/* ✅ NEW: Custom Tabs Rendering */}
+            {activeTab.startsWith('custom_') && (() => {
+              const tabKey = activeTab.replace('custom_', '');
+              const customTab = customFieldsConfig.tabs?.find(tab => tab.key === tabKey);
+              
+              if (!customTab) {
+                return (
+                  <div className="text-center py-8 text-red-500">
+                    <p>⚠️ Custom Tab nicht gefunden: {tabKey}</p>
+                  </div>
+                );
+              }
+
+              if (loadingCustomFields) {
+                return (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Lade Custom Fields...</p>
+                  </div>
+                );
+              }
+
+              const fields = (customTab.fields || []).sort((a, b) => (a.position || 0) - (b.position || 0));
+
+              return (
+                <div className="space-y-6">
+                  {/* Custom Tab Header */}
+                  <div className="text-center mb-6">
+                    <div className="text-4xl mb-2">{customTab.icon || '📝'}</div>
+                    <h3 className="text-lg font-semibold text-gray-800">{customTab.label}</h3>
+                    {customTab.description && (
+                      <p className="text-sm text-gray-600 mt-1">{customTab.description}</p>
+                    )}
+                  </div>
+
+                  {/* Custom Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {fields.map((field) => {
+                      const fieldValue = getCustomFieldValue(tabKey, field.key);
+                      const fieldError = fieldErrors[`customField_${tabKey}_${field.key}`];
+                      
+                      return (
+                        <div key={field.key} className={
+                          field.type === 'textarea' || field.type === 'multi-entry' ? 'md:col-span-2' : ''
+                        }>
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={(value) => updateCustomFieldValue(tabKey, field.key, value)}
+                            error={fieldError}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {fields.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-4xl mb-2">📋</div>
+                      <p>Keine Felder in diesem Tab konfiguriert.</p>
+                      <p className="text-sm">Konfigurieren Sie Custom Fields in den Systemeinstellungen.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </form>
         </div>
 
         {/* Modal Footer */}
         <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-          <div className="flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 disabled:opacity-50"
-            >
-              {t('actions.cancel', 'Abbrechen')}
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading || (iban && !isIbanValid)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <span className="animate-spin inline-block mr-2">⏳</span>
-                  {t('common.saving', 'Speichere...')}
-                </>
-              ) : (
-                t('actions.save', 'Speichern')
+          <div className="flex justify-between items-center">
+            {/* Tab indicator */}
+            <div className="text-sm text-gray-500">
+              {allTabs.length > 5 && (
+                <span>
+                  {allTabs.findIndex(tab => tab.id === activeTab) + 1} von {allTabs.length} Tabs
+                  {Object.keys(fieldErrors).length > 0 && (
+                    <span className="text-red-500 ml-2">
+                      • {Object.keys(fieldErrors).length} Fehler
+                    </span>
+                  )}
+                </span>
               )}
-            </button>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 disabled:opacity-50"
+              >
+                {t('actions.cancel', 'Abbrechen')}
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={loading || (iban && !isIbanValid)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <span className="animate-spin inline-block mr-2">⏳</span>
+                    {t('common.saving', 'Speichere...')}
+                  </>
+                ) : (
+                  t('actions.save', 'Speichern')
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

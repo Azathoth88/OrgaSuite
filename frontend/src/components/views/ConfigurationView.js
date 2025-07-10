@@ -1,4 +1,4 @@
-// frontend/src/components/views/ConfigurationView.js - VOLLSTÄNDIG ERWEITERT
+// frontend/src/components/views/ConfigurationView.js - VOLLSTÄNDIG MIT CUSTOM FIELDS
 import React, { useState, useContext, useEffect } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
@@ -15,7 +15,7 @@ const ConfigurationView = () => {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('membership');
   
-  // Default Konfiguration VOLLSTÄNDIG ERWEITERT
+  // Default Konfiguration MIT CUSTOM FIELDS
   const defaultConfig = {
     membershipConfig: {
       statuses: [
@@ -57,7 +57,6 @@ const ConfigurationView = () => {
           }
         }
       ],
-      // ✅ NEUE KONFIGURATIONEN
       joiningSources: [
         { key: 'website', label: 'Internet / Webseite', color: 'blue', description: '', active: true },
         { key: 'social_media', label: 'Social Media', color: 'purple', description: '', active: true },
@@ -72,7 +71,11 @@ const ConfigurationView = () => {
         { key: 'expelled', label: 'Kündigung durch Verein', color: 'red', description: '', requiresDate: true, active: true },
         { key: 'no_reason', label: 'Keine Angabe', color: 'gray', description: '', requiresDate: false, active: true }
       ],
-      defaultCurrency: 'EUR'
+      defaultCurrency: 'EUR',
+      // ✅ CUSTOM FIELDS
+      customFields: {
+        tabs: []
+      }
     },
     generalConfig: {
       dateFormat: 'DD.MM.YYYY',
@@ -81,7 +84,7 @@ const ConfigurationView = () => {
     }
   };
 
-  // Aktuelle Konfiguration aus Organization Settings laden mit sicherer Struktur
+  // Aktuelle Konfiguration aus Organization Settings laden mit Custom Fields
   const [config, setConfig] = useState(() => {
     const orgSettings = organization?.settings || {};
     return {
@@ -90,7 +93,8 @@ const ConfigurationView = () => {
         ...(orgSettings.membershipConfig || {}),
         statuses: orgSettings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
         joiningSources: orgSettings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
-        leavingReasons: orgSettings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons
+        leavingReasons: orgSettings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons,
+        customFields: orgSettings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields
       },
       generalConfig: {
         ...defaultConfig.generalConfig,
@@ -108,7 +112,8 @@ const ConfigurationView = () => {
           ...(organization.settings.membershipConfig || {}),
           statuses: organization.settings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
           joiningSources: organization.settings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
-          leavingReasons: organization.settings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons
+          leavingReasons: organization.settings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons,
+          customFields: organization.settings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields
         },
         generalConfig: {
           ...defaultConfig.generalConfig,
@@ -117,6 +122,144 @@ const ConfigurationView = () => {
       }));
     }
   }, [organization]);
+
+  // ✅ CUSTOM FIELDS MANAGEMENT FUNCTIONS
+
+  // Custom Tab Functions
+  const addCustomTab = () => {
+    const currentTabs = config.membershipConfig?.customFields?.tabs || [];
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: [
+            ...currentTabs,
+            {
+              key: `custom_tab_${Date.now()}`,
+              label: 'Neuer Tab',
+              icon: '📝',
+              description: '',
+              position: currentTabs.length + 1,
+              active: true,
+              fields: []
+            }
+          ]
+        }
+      }
+    }));
+  };
+
+  const updateCustomTab = (tabIndex, field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: (prev.membershipConfig?.customFields?.tabs || []).map((tab, i) => 
+            i === tabIndex ? { ...tab, [field]: value } : tab
+          )
+        }
+      }
+    }));
+  };
+
+  const removeCustomTab = (tabIndex) => {
+    const currentTabs = config.membershipConfig?.customFields?.tabs || [];
+    if (currentTabs.length <= 0) return;
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: (prev.membershipConfig?.customFields?.tabs || []).filter((_, i) => i !== tabIndex)
+        }
+      }
+    }));
+  };
+
+  // Custom Field Functions
+  const addCustomField = (tabIndex) => {
+    const currentTabs = config.membershipConfig?.customFields?.tabs || [];
+    const currentFields = currentTabs[tabIndex]?.fields || [];
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: (prev.membershipConfig?.customFields?.tabs || []).map((tab, i) => 
+            i === tabIndex ? {
+              ...tab,
+              fields: [
+                ...currentFields,
+                {
+                  key: `field_${Date.now()}`,
+                  label: 'Neues Feld',
+                  type: 'text',
+                  position: currentFields.length + 1,
+                  required: false,
+                  description: ''
+                }
+              ]
+            } : tab
+          )
+        }
+      }
+    }));
+  };
+
+  const updateCustomField = (tabIndex, fieldIndex, field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: (prev.membershipConfig?.customFields?.tabs || []).map((tab, i) => 
+            i === tabIndex ? {
+              ...tab,
+              fields: (tab.fields || []).map((f, j) => 
+                j === fieldIndex ? { ...f, [field]: value } : f
+              )
+            } : tab
+          )
+        }
+      }
+    }));
+  };
+
+  const removeCustomField = (tabIndex, fieldIndex) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        customFields: {
+          ...prev.membershipConfig.customFields,
+          tabs: (prev.membershipConfig?.customFields?.tabs || []).map((tab, i) => 
+            i === tabIndex ? {
+              ...tab,
+              fields: (tab.fields || []).filter((_, j) => j !== fieldIndex)
+            } : tab
+          )
+        }
+      }
+    }));
+  };
+
+  // Field type specific update functions
+  const updateFieldOptions = (tabIndex, fieldIndex, options) => {
+    updateCustomField(tabIndex, fieldIndex, 'options', options);
+  };
+
+  const updateFieldEntryConfig = (tabIndex, fieldIndex, entryConfig) => {
+    updateCustomField(tabIndex, fieldIndex, 'entryConfig', entryConfig);
+  };
 
   // ✅ RESET-FUNKTION MIT API-AUFRUF
   const handleResetToDefaults = async () => {
@@ -127,10 +270,8 @@ const ConfigurationView = () => {
     setSaving(true);
     
     try {
-      // Fallback: Use local defaultConfig if API is not available
       setConfig({ ...defaultConfig });
       
-      // Versuche API-Call, aber verwende lokalen Fallback bei Fehler
       try {
         const response = await axios.post(`${API_URL}/organization/config/reset-defaults`);
         if (response.data?.config) {
@@ -140,7 +281,6 @@ const ConfigurationView = () => {
         console.warn('API reset not available, using local default config:', apiError);
       }
       
-      // Organization Context aktualisieren
       if (saveOrganization) {
         await saveOrganization({
           ...organization,
@@ -267,7 +407,7 @@ const ConfigurationView = () => {
     }));
   };
 
-  // ✅ NEUE FUNKTIONEN FÜR BEITRITTSQUELLEN
+  // ✅ BEITRITTSQUELLEN FUNKTIONEN
   const updateJoiningSource = (index, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -316,7 +456,7 @@ const ConfigurationView = () => {
     }));
   };
 
-  // ✅ NEUE FUNKTIONEN FÜR KÜNDIGUNGSGRÜNDE
+  // ✅ KÜNDIGUNGSGRÜNDE FUNKTIONEN
   const updateLeavingReason = (index, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -366,7 +506,7 @@ const ConfigurationView = () => {
     }));
   };
 
-  // Tab-Definitionen VOLLSTÄNDIG ERWEITERT
+  // Tab-Definitionen MIT CUSTOM FIELDS
   const tabs = [
     {
       id: 'membership',
@@ -375,10 +515,17 @@ const ConfigurationView = () => {
       description: t('configuration.tabs.membershipDesc', 'Status, Beiträge und Abrechnungszyklen')
     },
     {
-      id: 'sources_reasons', // ✅ NEUER TAB
+      id: 'sources_reasons',
       name: t('configuration.tabs.sourcesReasons', 'Quellen & Gründe'),
       icon: '📝',
       description: t('configuration.tabs.sourcesReasonsDesc', 'Beitrittsquellen und Kündigungsgründe')
+    },
+    // ✅ CUSTOM FIELDS TAB
+    {
+      id: 'custom_fields',
+      name: t('configuration.tabs.customFields', 'Custom Fields'),
+      icon: '🔧',
+      description: t('configuration.tabs.customFieldsDesc', 'Benutzerdefinierte Felder für Mitgliederdaten')
     },
     {
       id: 'general',
@@ -388,7 +535,25 @@ const ConfigurationView = () => {
     }
   ];
 
-  // Farb-Optionen für Status ERWEITERT
+  // Field type options
+  const fieldTypeOptions = [
+    { value: 'text', label: 'Text (einzeilig)', description: 'Einfaches Textfeld' },
+    { value: 'textarea', label: 'Text (mehrzeilig)', description: 'Großes Textfeld für längere Eingaben' },
+    { value: 'number', label: 'Zahl', description: 'Numerische Eingabe' },
+    { value: 'date', label: 'Datum', description: 'Datumswähler' },
+    { value: 'checkbox', label: 'Checkbox', description: 'Ja/Nein Auswahl' },
+    { value: 'select', label: 'Dropdown (Einzelauswahl)', description: 'Auswahl aus vorgegebenen Optionen' },
+    { value: 'multiselect', label: 'Dropdown (Mehrfachauswahl)', description: 'Mehrere Optionen auswählbar' },
+    { value: 'multi-entry', label: 'Multi-Entry', description: 'Mehrere Einträge mit Bemerkungen (z.B. Rassen)' }
+  ];
+
+  // Icon options for tabs
+  const iconOptions = [
+    '📝', '🐓', '🏠', '📞', '📧', '🏢', '👤', '📊', '🔧', '⚙️', 
+    '📋', '📄', '💼', '🎯', '📈', '💰', '🏆', '🎨', '🔍', '📎'
+  ];
+
+  // Farb-Optionen für Status
   const colorOptions = [
     { value: 'green', label: t('configuration.colors.green', 'Grün'), class: 'bg-green-100 text-green-800' },
     { value: 'blue', label: t('configuration.colors.blue', 'Blau'), class: 'bg-blue-100 text-blue-800' },
@@ -484,10 +649,10 @@ const ConfigurationView = () => {
         </div>
 
         <div className="p-6">
-          {/* ✅ VOLLSTÄNDIGER MITGLIEDSCHAFT TAB */}
+          {/* ✅ MITGLIEDSCHAFT TAB */}
           {activeTab === 'membership' && (
             <div className="space-y-8">
-              {/* Mitgliedsstatus Konfiguration - VOLLSTÄNDIG */}
+              {/* Mitgliedsstatus Konfiguration */}
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -562,7 +727,6 @@ const ConfigurationView = () => {
                                 type="checkbox"
                                 checked={status.default || false}
                                 onChange={(e) => {
-                                  // Entferne default von allen anderen Status
                                   setConfig(prev => ({
                                     ...prev,
                                     membershipConfig: {
@@ -602,7 +766,7 @@ const ConfigurationView = () => {
                         />
                       </div>
 
-                      {/* ✅ VOLLSTÄNDIGE Billing-Konfiguration für diesen Status */}
+                      {/* Billing-Konfiguration */}
                       <div className="mt-4 p-3 bg-white border border-gray-200 rounded">
                         <h4 className="text-sm font-semibold text-gray-700 mb-3">
                           {t('configuration.status.billingTitle', 'Beitrags- und Abrechnungseinstellungen')}
@@ -677,11 +841,6 @@ const ConfigurationView = () => {
                                   className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                                   placeholder="1"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">
-                                  {status.billing?.frequency === 'monthly' && t('configuration.billing.dueDayHelp.monthly', 'Tag im Monat (1-31)')}
-                                  {status.billing?.frequency === 'quarterly' && t('configuration.billing.dueDayHelp.quarterly', 'Tag im ersten Quartalsmonat (1-31)')}
-                                  {status.billing?.frequency === 'yearly' && t('configuration.billing.dueDayHelp.yearly', 'Tag im Jahr (1-365)')}
-                                </p>
                               </div>
                               
                               <div className="md:col-span-2">
@@ -737,10 +896,10 @@ const ConfigurationView = () => {
             </div>
           )}
 
-          {/* ✅ NEUER TAB: Quellen & Gründe */}
+          {/* ✅ QUELLEN & GRÜNDE TAB */}
           {activeTab === 'sources_reasons' && (
             <div className="space-y-8">
-              {/* Beitrittsquellen Konfiguration */}
+              {/* Beitrittsquellen */}
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -799,13 +958,6 @@ const ConfigurationView = () => {
                               </option>
                             ))}
                           </select>
-                          <div className="mt-1">
-                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-                              colorOptions.find(c => c.value === (source.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {t('configuration.joiningSources.preview', 'Vorschau')}: {source.label || 'Quelle'}
-                            </span>
-                          </div>
                         </div>
                         
                         <div className="flex items-end space-x-2">
@@ -849,7 +1001,7 @@ const ConfigurationView = () => {
                 </div>
               </div>
 
-              {/* Kündigungsgründe Konfiguration */}
+              {/* Kündigungsgründe */}
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -908,13 +1060,6 @@ const ConfigurationView = () => {
                               </option>
                             ))}
                           </select>
-                          <div className="mt-1">
-                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-                              colorOptions.find(c => c.value === (reason.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {t('configuration.leavingReasons.preview', 'Vorschau')}: {reason.label || 'Grund'}
-                            </span>
-                          </div>
                         </div>
                         
                         <div className="flex items-end space-x-2">
@@ -971,10 +1116,411 @@ const ConfigurationView = () => {
             </div>
           )}
 
-          {/* Allgemein Tab */}
+          {/* ✅ CUSTOM FIELDS TAB */}
+          {activeTab === 'custom_fields' && (
+            <div className="space-y-8">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-800">
+                  {t('configuration.customFields.title', 'Custom Fields verwalten')}
+                </h3>
+                <button
+                  onClick={addCustomTab}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  ➕ {t('configuration.customFields.addTab', 'Tab hinzufügen')}
+                </button>
+              </div>
+              
+              <div className="space-y-6">
+                {(config.membershipConfig?.customFields?.tabs || []).map((tab, tabIndex) => (
+                  <div key={tabIndex} className="bg-gray-50 p-6 rounded-lg border">
+                    {/* Tab Configuration */}
+                    <div className="mb-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="text-md font-semibold text-gray-700">
+                          Tab Konfiguration
+                        </h4>
+                        <button
+                          onClick={() => removeCustomTab(tabIndex)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded"
+                          title="Tab entfernen"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Schlüssel
+                          </label>
+                          <input
+                            type="text"
+                            value={tab.key || ''}
+                            onChange={(e) => updateCustomTab(tabIndex, 'key', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="z.B. breeding_data"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Bezeichnung
+                          </label>
+                          <input
+                            type="text"
+                            value={tab.label || ''}
+                            onChange={(e) => updateCustomTab(tabIndex, 'label', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="z.B. Zuchtdaten"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Icon
+                          </label>
+                          <select
+                            value={tab.icon || '📝'}
+                            onChange={(e) => updateCustomTab(tabIndex, 'icon', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          >
+                            {iconOptions.map(icon => (
+                              <option key={icon} value={icon}>{icon}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Position
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={tab.position || 1}
+                            onChange={(e) => updateCustomTab(tabIndex, 'position', parseInt(e.target.value) || 1)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Beschreibung
+                        </label>
+                        <input
+                          type="text"
+                          value={tab.description || ''}
+                          onChange={(e) => updateCustomTab(tabIndex, 'description', e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          placeholder="Beschreibung des Tabs"
+                        />
+                      </div>
+                      
+                      <div className="mt-3">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={tab.active !== false}
+                            onChange={(e) => updateCustomTab(tabIndex, 'active', e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Tab aktiv</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Fields Configuration */}
+                    <div>
+                      <div className="flex justify-between items-center mb-4">
+                        <h5 className="text-sm font-semibold text-gray-700">
+                          Felder ({(tab.fields || []).length})
+                        </h5>
+                        <button
+                          onClick={() => addCustomField(tabIndex)}
+                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                        >
+                          ➕ Feld hinzufügen
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        {(tab.fields || []).map((field, fieldIndex) => (
+                          <div key={fieldIndex} className="bg-white p-4 rounded border">
+                            <div className="flex justify-between items-center mb-3">
+                              <h6 className="text-sm font-medium text-gray-600">
+                                Feld {fieldIndex + 1}: {field.label || 'Unbenannt'}
+                              </h6>
+                              <button
+                                onClick={() => removeCustomField(tabIndex, fieldIndex)}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                                title="Feld entfernen"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Schlüssel
+                                </label>
+                                <input
+                                  type="text"
+                                  value={field.key || ''}
+                                  onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'key', e.target.value)}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                  placeholder="field_key"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Bezeichnung
+                                </label>
+                                <input
+                                  type="text"
+                                  value={field.label || ''}
+                                  onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'label', e.target.value)}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                  placeholder="Feldname"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Typ
+                                </label>
+                                <select
+                                  value={field.type || 'text'}
+                                  onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'type', e.target.value)}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                >
+                                  {fieldTypeOptions.map(type => (
+                                    <option key={type.value} value={type.value} title={type.description}>
+                                      {type.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Position
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={field.position || 1}
+                                  onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'position', parseInt(e.target.value) || 1)}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="mt-3">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Beschreibung
+                              </label>
+                              <input
+                                type="text"
+                                value={field.description || ''}
+                                onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'description', e.target.value)}
+                                className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                placeholder="Hilfstext für dieses Feld"
+                              />
+                            </div>
+                            
+                            <div className="mt-3 flex items-center space-x-4">
+                              <label className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={field.required || false}
+                                  onChange={(e) => updateCustomField(tabIndex, fieldIndex, 'required', e.target.checked)}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-1"
+                                />
+                                <span className="text-xs text-gray-700">Pflichtfeld</span>
+                              </label>
+                            </div>
+
+                            {/* Field Type Specific Configuration */}
+                            {['select', 'multiselect'].includes(field.type) && (
+                              <div className="mt-4 p-3 bg-gray-50 rounded">
+                                <label className="block text-xs font-medium text-gray-700 mb-2">
+                                  Auswahloptionen
+                                </label>
+                                <div className="space-y-2">
+                                  {(field.options || []).map((option, optionIndex) => (
+                                    <div key={optionIndex} className="flex items-center space-x-2">
+                                      <input
+                                        type="text"
+                                        value={option.value || ''}
+                                        onChange={(e) => {
+                                          const newOptions = [...(field.options || [])];
+                                          newOptions[optionIndex] = { ...option, value: e.target.value };
+                                          updateFieldOptions(tabIndex, fieldIndex, newOptions);
+                                        }}
+                                        className="flex-1 p-1 text-sm border border-gray-300 rounded"
+                                        placeholder="Wert"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={option.label || ''}
+                                        onChange={(e) => {
+                                          const newOptions = [...(field.options || [])];
+                                          newOptions[optionIndex] = { ...option, label: e.target.value };
+                                          updateFieldOptions(tabIndex, fieldIndex, newOptions);
+                                        }}
+                                        className="flex-1 p-1 text-sm border border-gray-300 rounded"
+                                        placeholder="Anzeigename"
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          const newOptions = (field.options || []).filter((_, i) => i !== optionIndex);
+                                          updateFieldOptions(tabIndex, fieldIndex, newOptions);
+                                        }}
+                                        className="p-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    onClick={() => {
+                                      const newOptions = [...(field.options || []), { value: '', label: '' }];
+                                      updateFieldOptions(tabIndex, fieldIndex, newOptions);
+                                    }}
+                                    className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                  >
+                                    ➕ Option hinzufügen
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {field.type === 'multi-entry' && (
+                              <div className="mt-4 p-3 bg-gray-50 rounded">
+                                <label className="block text-xs font-medium text-gray-700 mb-2">
+                                  Multi-Entry Konfiguration
+                                </label>
+                                
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Bemerkungsfeld Label
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={field.entryConfig?.remarkLabel || ''}
+                                    onChange={(e) => updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                      ...field.entryConfig,
+                                      remarkLabel: e.target.value
+                                    })}
+                                    className="w-full p-1 text-sm border border-gray-300 rounded"
+                                    placeholder="z.B. Bemerkung/Rasse Details"
+                                  />
+                                </div>
+                                
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700 mb-2">
+                                    Basis-Optionen
+                                  </label>
+                                  <div className="space-y-2">
+                                    {(field.entryConfig?.baseOptions || []).map((option, optionIndex) => (
+                                      <div key={optionIndex} className="flex items-center space-x-2">
+                                        <input
+                                          type="text"
+                                          value={option.value || ''}
+                                          onChange={(e) => {
+                                            const newOptions = [...(field.entryConfig?.baseOptions || [])];
+                                            newOptions[optionIndex] = { ...option, value: e.target.value };
+                                            updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                              ...field.entryConfig,
+                                              baseOptions: newOptions
+                                            });
+                                          }}
+                                          className="flex-1 p-1 text-sm border border-gray-300 rounded"
+                                          placeholder="Wert"
+                                        />
+                                        <input
+                                          type="text"
+                                          value={option.label || ''}
+                                          onChange={(e) => {
+                                            const newOptions = [...(field.entryConfig?.baseOptions || [])];
+                                            newOptions[optionIndex] = { ...option, label: e.target.value };
+                                            updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                              ...field.entryConfig,
+                                              baseOptions: newOptions
+                                            });
+                                          }}
+                                          className="flex-1 p-1 text-sm border border-gray-300 rounded"
+                                          placeholder="Anzeigename (z.B. Huhn)"
+                                        />
+                                        <button
+                                          onClick={() => {
+                                            const newOptions = (field.entryConfig?.baseOptions || []).filter((_, i) => i !== optionIndex);
+                                            updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                              ...field.entryConfig,
+                                              baseOptions: newOptions
+                                            });
+                                          }}
+                                          className="p-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ))}
+                                    <button
+                                      onClick={() => {
+                                        const newOptions = [...(field.entryConfig?.baseOptions || []), { value: '', label: '' }];
+                                        updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                          ...field.entryConfig,
+                                          baseOptions: newOptions
+                                        });
+                                      }}
+                                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                    >
+                                      ➕ Option hinzufügen
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        
+                        {(tab.fields || []).length === 0 && (
+                          <div className="text-center py-8 text-gray-500">
+                            <div className="text-4xl mb-2">📋</div>
+                            <p>Keine Felder in diesem Tab.</p>
+                            <p className="text-sm">Klicken Sie auf "Feld hinzufügen" um zu beginnen.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {(config.membershipConfig?.customFields?.tabs || []).length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    <div className="text-6xl mb-4">🔧</div>
+                    <h3 className="text-lg font-medium mb-2">Keine Custom Fields konfiguriert</h3>
+                    <p className="mb-4">Erstellen Sie benutzerdefinierte Tabs und Felder für Ihre Mitgliederdaten.</p>
+                    <button
+                      onClick={addCustomTab}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      ➕ Ersten Tab erstellen
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ✅ ALLGEMEIN TAB */}
           {activeTab === 'general' && (
             <div className="space-y-8">
-              {/* Allgemeine Einstellungen */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">
                   {t('configuration.general.title', 'Grundeinstellungen')}
@@ -1029,7 +1575,6 @@ const ConfigurationView = () => {
                 </div>
               </div>
 
-              {/* Vorschau der aktuellen Konfiguration */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">
                   {t('configuration.general.preview', 'Konfigurationsvorschau')}
@@ -1046,7 +1591,7 @@ const ConfigurationView = () => {
         </div>
       </div>
 
-      {/* Info-Panel VOLLSTÄNDIG ERWEITERT */}
+      {/* Info-Panel */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start">
           <div className="text-blue-600 text-xl mr-3">ℹ️</div>
@@ -1062,6 +1607,9 @@ const ConfigurationView = () => {
               <li>• <strong>{t('configuration.info.sourcesReasons', 'Beitrittsquellen und Kündigungsgründe helfen bei der statistischen Auswertung der Mitgliederbewegungen')}</strong></li>
               <li>• {t('configuration.info.billingCycles', 'Verschiedene Mitgliedsstatus können unterschiedliche Beitragszyklen haben')}</li>
               <li>• {t('configuration.info.statusColors', 'Farben helfen bei der visuellen Unterscheidung der Status in Listen und Berichten')}</li>
+              <li>• <strong>Custom Fields erweitern das Mitgliederformular um benutzerdefinierte Tabs und Felder</strong></li>
+              <li>• Multi-Entry Felder sind perfekt für Zuchtdaten (Rassen + Bemerkungen)</li>
+              <li>• Alle Custom Field Daten werden in membershipData.customFields gespeichert</li>
             </ul>
           </div>
         </div>

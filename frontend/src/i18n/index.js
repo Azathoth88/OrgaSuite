@@ -1,13 +1,13 @@
-// frontend/src/i18n/index.js - ERWEITERT mit Beitrittsquellen und Kündigungsgründen
+// frontend/src/i18n/index.js - VOLLSTÄNDIG ERWEITERT mit Custom Fields und Beitrittsquellen/Kündigungsgründen
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-// Sync loading von lokalen Ressourcen ERWEITERT
+// Sync loading von lokalen Ressourcen VOLLSTÄNDIG ERWEITERT
 const getTranslations = (orgType, language) => {
-  // Fallback-Übersetzungen die immer verfügbar sind ERWEITERT
+  // Fallback-Übersetzungen die immer verfügbar sind VOLLSTÄNDIG ERWEITERT
   const commonTranslations = {
-    // Common (existing)
+    // Common (existing + new)
     'common.loading': language === 'en' ? 'Loading...' : 'Lädt...',
     'common.error': language === 'en' ? 'Error' : 'Fehler',
     'common.success': language === 'en' ? 'Success' : 'Erfolgreich',
@@ -23,8 +23,13 @@ const getTranslations = (orgType, language) => {
     'common.info': language === 'en' ? 'Info' : 'Info',
     'common.deleteError': language === 'en' ? 'Error deleting' : 'Fehler beim Löschen',
     'common.pleaseSelect': language === 'en' ? 'Please select' : 'Bitte wählen',
+    'common.preview': language === 'en' ? 'Preview' : 'Vorschau',
+    'common.example': language === 'en' ? 'Example' : 'Beispiel',
+    'common.position': language === 'en' ? 'Position' : 'Position',
+    'common.active': language === 'en' ? 'Active' : 'Aktiv',
+    'common.inactive': language === 'en' ? 'Inactive' : 'Inaktiv',
     
-    // Actions (existing)
+    // Actions (existing + new)
     'actions.create': language === 'en' ? 'Create' : 'Erstellen',
     'actions.edit': language === 'en' ? 'Edit' : 'Bearbeiten',
     'actions.delete': language === 'en' ? 'Delete' : 'Löschen',
@@ -32,8 +37,12 @@ const getTranslations = (orgType, language) => {
     'actions.cancel': language === 'en' ? 'Cancel' : 'Abbrechen',
     'actions.view': language === 'en' ? 'View' : 'Anzeigen',
     'actions.retry': language === 'en' ? 'Retry' : 'Erneut versuchen',
+    'actions.add': language === 'en' ? 'Add' : 'Hinzufügen',
+    'actions.remove': language === 'en' ? 'Remove' : 'Entfernen',
+    'actions.configure': language === 'en' ? 'Configure' : 'Konfigurieren',
+    'actions.preview': language === 'en' ? 'Preview' : 'Vorschau',
     
-    // Navigation (existing + new)
+    // Navigation (existing + custom fields)
     'navigation.menu': language === 'en' ? 'Menu' : 'Menü',
     'navigation.dashboard': language === 'en' ? 'Dashboard' : 'Dashboard',
     'navigation.dashboardDesc': language === 'en' ? 'Overview and Statistics' : 'Übersicht und Statistiken',
@@ -49,6 +58,10 @@ const getTranslations = (orgType, language) => {
     'navigation.eventsDesc': language === 'en' ? 'Events and Meetings' : 'Veranstaltungen und Meetings',
     'navigation.configuration': language === 'en' ? 'Configuration' : 'Konfiguration',
     'navigation.configurationDesc': language === 'en' ? 'System Settings' : 'Systemeinstellungen',
+    
+    // ✅ NEW: Custom Fields Configuration Translations
+    'configuration.tabs.customFields': language === 'en' ? 'Custom Fields' : 'Custom Fields',
+    'configuration.tabs.customFieldsDesc': language === 'en' ? 'Custom fields for member data' : 'Benutzerdefinierte Felder für Mitgliederdaten',
     
     // Configuration - General (existing)
     'configuration.title': language === 'en' ? 'Configuration' : 'Konfiguration',
@@ -70,6 +83,95 @@ const getTranslations = (orgType, language) => {
     'configuration.reset.error': language === 'en' ? 
       'Error resetting configuration.' : 
       'Fehler beim Zurücksetzen der Konfiguration.',
+
+    // Custom Fields Management
+    'configuration.customFields.title': language === 'en' ? 'Manage Custom Fields' : 'Custom Fields verwalten',
+    'configuration.customFields.addTab': language === 'en' ? 'Add Tab' : 'Tab hinzufügen',
+    'configuration.customFields.tabConfig': language === 'en' ? 'Tab Configuration' : 'Tab Konfiguration',
+    'configuration.customFields.fieldsConfig': language === 'en' ? 'Fields Configuration' : 'Felder Konfiguration',
+    'configuration.customFields.noTabs': language === 'en' ? 'No Custom Fields configured' : 'Keine Custom Fields konfiguriert',
+    'configuration.customFields.noTabsDesc': language === 'en' ? 'Create custom tabs and fields for your member data.' : 'Erstellen Sie benutzerdefinierte Tabs und Felder für Ihre Mitgliederdaten.',
+    'configuration.customFields.createFirst': language === 'en' ? 'Create first Tab' : 'Ersten Tab erstellen',
+    
+    // Custom Tab Configuration
+    'configuration.customTab.key': language === 'en' ? 'Key' : 'Schlüssel',
+    'configuration.customTab.keyPlaceholder': language === 'en' ? 'e.g. breeding_data' : 'z.B. breeding_data',
+    'configuration.customTab.label': language === 'en' ? 'Label' : 'Bezeichnung',
+    'configuration.customTab.labelPlaceholder': language === 'en' ? 'e.g. Breeding Data' : 'z.B. Zuchtdaten',
+    'configuration.customTab.icon': language === 'en' ? 'Icon' : 'Icon',
+    'configuration.customTab.description': language === 'en' ? 'Description' : 'Beschreibung',
+    'configuration.customTab.descriptionPlaceholder': language === 'en' ? 'Description of the tab' : 'Beschreibung des Tabs',
+    'configuration.customTab.position': language === 'en' ? 'Position' : 'Position',
+    'configuration.customTab.active': language === 'en' ? 'Tab active' : 'Tab aktiv',
+    'configuration.customTab.remove': language === 'en' ? 'Remove tab' : 'Tab entfernen',
+    
+    // Custom Field Configuration
+    'configuration.customField.add': language === 'en' ? 'Add Field' : 'Feld hinzufügen',
+    'configuration.customField.key': language === 'en' ? 'Key' : 'Schlüssel',
+    'configuration.customField.keyPlaceholder': language === 'en' ? 'field_key' : 'field_key',
+    'configuration.customField.label': language === 'en' ? 'Label' : 'Bezeichnung',
+    'configuration.customField.labelPlaceholder': language === 'en' ? 'Field name' : 'Feldname',
+    'configuration.customField.type': language === 'en' ? 'Type' : 'Typ',
+    'configuration.customField.description': language === 'en' ? 'Description' : 'Beschreibung',
+    'configuration.customField.descriptionPlaceholder': language === 'en' ? 'Help text for this field' : 'Hilfstext für dieses Feld',
+    'configuration.customField.required': language === 'en' ? 'Required field' : 'Pflichtfeld',
+    'configuration.customField.remove': language === 'en' ? 'Remove field' : 'Feld entfernen',
+    'configuration.customField.noFields': language === 'en' ? 'No fields in this tab.' : 'Keine Felder in diesem Tab.',
+    'configuration.customField.noFieldsDesc': language === 'en' ? 'Click "Add Field" to get started.' : 'Klicken Sie auf "Feld hinzufügen" um zu beginnen.',
+    
+    // Field Types
+    'configuration.fieldType.text': language === 'en' ? 'Text (single line)' : 'Text (einzeilig)',
+    'configuration.fieldType.textDesc': language === 'en' ? 'Simple text field' : 'Einfaches Textfeld',
+    'configuration.fieldType.textarea': language === 'en' ? 'Text (multi line)' : 'Text (mehrzeilig)',
+    'configuration.fieldType.textareaDesc': language === 'en' ? 'Large text field for longer input' : 'Großes Textfeld für längere Eingaben',
+    'configuration.fieldType.number': language === 'en' ? 'Number' : 'Zahl',
+    'configuration.fieldType.numberDesc': language === 'en' ? 'Numeric input' : 'Numerische Eingabe',
+    'configuration.fieldType.date': language === 'en' ? 'Date' : 'Datum',
+    'configuration.fieldType.dateDesc': language === 'en' ? 'Date picker' : 'Datumswähler',
+    'configuration.fieldType.checkbox': language === 'en' ? 'Checkbox' : 'Checkbox',
+    'configuration.fieldType.checkboxDesc': language === 'en' ? 'Yes/No selection' : 'Ja/Nein Auswahl',
+    'configuration.fieldType.select': language === 'en' ? 'Dropdown (single selection)' : 'Dropdown (Einzelauswahl)',
+    'configuration.fieldType.selectDesc': language === 'en' ? 'Selection from predefined options' : 'Auswahl aus vorgegebenen Optionen',
+    'configuration.fieldType.multiselect': language === 'en' ? 'Dropdown (multiple selection)' : 'Dropdown (Mehrfachauswahl)',
+    'configuration.fieldType.multiselectDesc': language === 'en' ? 'Multiple options selectable' : 'Mehrere Optionen auswählbar',
+    'configuration.fieldType.multiEntry': language === 'en' ? 'Multi-Entry' : 'Multi-Entry',
+    'configuration.fieldType.multiEntryDesc': language === 'en' ? 'Multiple entries with remarks (e.g. breeds)' : 'Mehrere Einträge mit Bemerkungen (z.B. Rassen)',
+    
+    // Field Options Configuration
+    'configuration.fieldOptions.title': language === 'en' ? 'Selection Options' : 'Auswahloptionen',
+    'configuration.fieldOptions.value': language === 'en' ? 'Value' : 'Wert',
+    'configuration.fieldOptions.valuePlaceholder': language === 'en' ? 'Value' : 'Wert',
+    'configuration.fieldOptions.label': language === 'en' ? 'Display Name' : 'Anzeigename',
+    'configuration.fieldOptions.labelPlaceholder': language === 'en' ? 'Display name' : 'Anzeigename',
+    'configuration.fieldOptions.addOption': language === 'en' ? 'Add Option' : 'Option hinzufügen',
+    'configuration.fieldOptions.removeOption': language === 'en' ? 'Remove option' : 'Option entfernen',
+    
+    // Multi-Entry Configuration
+    'configuration.multiEntry.title': language === 'en' ? 'Multi-Entry Configuration' : 'Multi-Entry Konfiguration',
+    'configuration.multiEntry.remarkLabel': language === 'en' ? 'Remark Field Label' : 'Bemerkungsfeld Label',
+    'configuration.multiEntry.remarkLabelPlaceholder': language === 'en' ? 'e.g. Remark/Breed Details' : 'z.B. Bemerkung/Rasse Details',
+    'configuration.multiEntry.baseOptions': language === 'en' ? 'Base Options' : 'Basis-Optionen',
+    'configuration.multiEntry.addOption': language === 'en' ? 'Add Option' : 'Option hinzufügen',
+    
+    // Custom Fields in Member Form
+    'members.customFields.loading': language === 'en' ? 'Loading Custom Fields...' : 'Lade Custom Fields...',
+    'members.customFields.notFound': language === 'en' ? 'Custom Tab not found' : 'Custom Tab nicht gefunden',
+    'members.customFields.noFields': language === 'en' ? 'No fields configured in this tab.' : 'Keine Felder in diesem Tab konfiguriert.',
+    'members.customFields.configureFields': language === 'en' ? 'Configure Custom Fields in system settings.' : 'Konfigurieren Sie Custom Fields in den Systemeinstellungen.',
+    'members.customFields.tabIndicator': language === 'en' ? 'of' : 'von',
+    'members.customFields.tabs': language === 'en' ? 'Tabs' : 'Tabs',
+    'members.customFields.errors': language === 'en' ? 'errors' : 'Fehler',
+    
+    // Multi-Entry Field Component
+    'customField.multiEntry.pleaseSelect': language === 'en' ? 'Please select...' : 'Bitte wählen...',
+    'customField.multiEntry.addEntry': language === 'en' ? 'Add Entry' : 'Eintrag hinzufügen',
+    'customField.multiEntry.removeEntry': language === 'en' ? 'Remove entry' : 'Eintrag entfernen',
+    'customField.multiEntry.currentEntries': language === 'en' ? 'Current Entries:' : 'Aktuelle Einträge:',
+    'customField.multiEntry.addButtonText': language === 'en' ? 'Add further entry' : 'Weiteren Eintrag hinzufügen',
+    
+    // Custom Field Types in Lists
+    'customField.selected': language === 'en' ? 'Selected:' : 'Ausgewählt:',
+    'customField.pleaseSelect': language === 'en' ? 'Please select...' : 'Bitte wählen...',
 
     // Configuration Tabs (existing + new)
     'configuration.tabs.membership': language === 'en' ? 'Membership' : 'Mitgliedschaft',
@@ -159,6 +261,17 @@ const getTranslations = (orgType, language) => {
     'validation.invalidUrl': language === 'en' ? 'Invalid URL' : 'Ungültige URL',
     // ✅ NEUE VALIDIERUNG
     'validation.leavingDateRequired': language === 'en' ? 'Leaving date is required for this reason' : 'Kündigungsdatum ist für diesen Grund erforderlich',
+    
+    // Custom Field Validation
+    'validation.customField.required': language === 'en' ? 'is a required field' : 'ist ein Pflichtfeld',
+    'validation.customField.invalidNumber': language === 'en' ? 'must be a valid number' : 'muss eine gültige Zahl sein',
+    'validation.customField.numberMin': language === 'en' ? 'must be at least' : 'muss mindestens',
+    'validation.customField.numberMax': language === 'en' ? 'may be at most' : 'darf höchstens',
+    'validation.customField.invalidDate': language === 'en' ? 'must be a valid date' : 'muss ein gültiges Datum sein',
+    'validation.customField.multiEntryRequired': language === 'en' ? 'requires at least one valid entry' : 'benötigt mindestens einen gültigen Eintrag',
+    'validation.customField.multiEntryInvalid': language === 'en' ? 'Invalid selection' : 'Ungültige Auswahl',
+    'validation.customField.invalidField': language === 'en' ? 'Invalid Field' : 'Ungültiges Field',
+    'validation.customField.unknownFieldType': language === 'en' ? 'Unknown field type' : 'Unbekannter Feldtyp',
 
     // Enhanced Configuration Info (existing + new)
     'configuration.info.title': language === 'en' ? 'Configuration Notes' : 'Hinweise zur Konfiguration',
@@ -178,6 +291,88 @@ const getTranslations = (orgType, language) => {
     'configuration.info.sourcesReasons': language === 'en' ?
       'Joining sources and leaving reasons help with statistical evaluation of member movements' :
       'Beitrittsquellen und Kündigungsgründe helfen bei der statistischen Auswertung der Mitgliederbewegungen',
+    'configuration.info.customFields': language === 'en' ?
+      'Custom Fields extend the member form with user-defined tabs and fields' :
+      'Custom Fields erweitern das Mitgliederformular um benutzerdefinierte Tabs und Felder',
+    'configuration.info.multiEntry': language === 'en' ?
+      'Multi-Entry fields are perfect for breeding data (species + remarks)' :
+      'Multi-Entry Felder sind perfekt für Zuchtdaten (Rassen + Bemerkungen)',
+    'configuration.info.fieldPosition': language === 'en' ?
+      'The position determines the order of tabs and fields' :
+      'Die Position bestimmt die Reihenfolge der Tabs und Felder',
+    'configuration.info.inactiveTabs': language === 'en' ?
+      'Inactive tabs are not displayed in the member form' :
+      'Deaktivierte Tabs werden im Mitgliederformular nicht angezeigt',
+    'configuration.info.dataStorage': language === 'en' ?
+      'All Custom Field data is stored in membershipData.customFields' :
+      'Alle Custom Field Daten werden in membershipData.customFields gespeichert',
+    'configuration.info.futureChanges': language === 'en' ?
+      'Changes affect all future member forms' :
+      'Änderungen wirken sich auf alle zukünftigen Mitgliederformulare aus',
+    
+    // ✅ SPECIFIC BREEDING/CLUB TRANSLATIONS
+    'customField.breeding.species': language === 'en' ? 'Breeding Species' : 'Gezüchtete Rassen',
+    'customField.breeding.speciesDesc': language === 'en' ? 'Which species do you breed? Add remarks.' : 'Welche Rassen züchten Sie? Fügen Sie Bemerkungen hinzu.',
+    'customField.breeding.remarkLabel': language === 'en' ? 'Remark/Species Details' : 'Bemerkung/Rasse Details',
+    'customField.breeding.experience': language === 'en' ? 'Breeding Experience (Years)' : 'Zuchterfahrung (Jahre)',
+    'customField.breeding.experienceDesc': language === 'en' ? 'How many years of breeding experience do you have?' : 'Wie viele Jahre Zuchterfahrung haben Sie?',
+    'customField.breeding.exhibitions': language === 'en' ? 'Exhibition Participation' : 'Ausstellungsteilnahme',
+    'customField.breeding.exhibitionsDesc': language === 'en' ? 'Do you regularly participate in poultry exhibitions?' : 'Nehmen Sie regelmäßig an Geflügelausstellungen teil?',
+    'customField.breeding.goals': language === 'en' ? 'Breeding Goals' : 'Zuchtziele',
+    'customField.breeding.goalsDesc': language === 'en' ? 'Describe your breeding goals and special interests' : 'Beschreiben Sie Ihre Zuchtziele und besonderen Interessen',
+    'customField.breeding.facilityType': language === 'en' ? 'Type of Housing' : 'Art der Haltung',
+    'customField.breeding.facilityTypeDesc': language === 'en' ? 'How do you keep your poultry?' : 'Wie halten Sie Ihr Geflügel?',
+    
+    // Facility Types
+    'customField.facility.freeRange': language === 'en' ? 'Free Range' : 'Freilandhaltung',
+    'customField.facility.aviary': language === 'en' ? 'Aviary Housing' : 'Volierenhaltung',
+    'customField.facility.barn': language === 'en' ? 'Barn Housing' : 'Stallhaltung',
+    'customField.facility.mixed': language === 'en' ? 'Mixed Housing' : 'Gemischte Haltung',
+    
+    // Communication Preferences
+    'customField.communication.newsletter': language === 'en' ? 'Subscribe to Newsletter' : 'Newsletter abonnieren',
+    'customField.communication.newsletterDesc': language === 'en' ? 'Would you like to receive our monthly newsletter?' : 'Möchten Sie unseren monatlichen Newsletter erhalten?',
+    'customField.communication.channels': language === 'en' ? 'Preferred Communication Channels' : 'Bevorzugte Kommunikationswege',
+    'customField.communication.channelsDesc': language === 'en' ? 'How would you like to be contacted?' : 'Wie möchten Sie kontaktiert werden?',
+    'customField.communication.availability': language === 'en' ? 'Availability for Club Meetings' : 'Verfügbarkeit für Vereinstreffen',
+    'customField.communication.availabilityDesc': language === 'en' ? 'When can you usually attend club meetings?' : 'Wann können Sie normalerweise an Vereinstreffen teilnehmen?',
+    
+    // Communication Channels
+    'customField.channel.email': language === 'en' ? 'Email' : 'E-Mail',
+    'customField.channel.phone': language === 'en' ? 'Phone' : 'Telefon',
+    'customField.channel.letter': language === 'en' ? 'Letter' : 'Brief',
+    'customField.channel.whatsapp': language === 'en' ? 'WhatsApp' : 'WhatsApp',
+    
+    // Meeting Availability
+    'customField.meeting.weekdayEvening': language === 'en' ? 'Weekday Evening' : 'Wochentag abends',
+    'customField.meeting.saturdayMorning': language === 'en' ? 'Saturday Morning' : 'Samstag vormittag',
+    'customField.meeting.saturdayAfternoon': language === 'en' ? 'Saturday Afternoon' : 'Samstag nachmittag',
+    'customField.meeting.sundayMorning': language === 'en' ? 'Sunday Morning' : 'Sonntag vormittag',
+    'customField.meeting.sundayAfternoon': language === 'en' ? 'Sunday Afternoon' : 'Sonntag nachmittag',
+    'customField.meeting.flexible': language === 'en' ? 'Flexible' : 'Flexibel',
+    
+    // Business Data (for companies)
+    'customField.business.size': language === 'en' ? 'Company Size' : 'Unternehmensgröße',
+    'customField.business.sizeDesc': language === 'en' ? 'How many employees does your company have?' : 'Wie viele Mitarbeiter hat Ihr Unternehmen?',
+    'customField.business.sector': language === 'en' ? 'Industry' : 'Branche',
+    'customField.business.sectorDesc': language === 'en' ? 'In which industries are you active?' : 'In welchen Branchen sind Sie tätig?',
+    'customField.business.revenue': language === 'en' ? 'Annual Revenue (EUR)' : 'Jahresumsatz (EUR)',
+    'customField.business.revenueDesc': language === 'en' ? 'Estimated annual revenue' : 'Geschätzter Jahresumsatz',
+    
+    // Company Sizes
+    'customField.companySize.micro': language === 'en' ? '1-9 Employees' : '1-9 Mitarbeiter',
+    'customField.companySize.small': language === 'en' ? '10-49 Employees' : '10-49 Mitarbeiter',
+    'customField.companySize.medium': language === 'en' ? '50-249 Employees' : '50-249 Mitarbeiter',
+    'customField.companySize.large': language === 'en' ? '250+ Employees' : '250+ Mitarbeiter',
+    
+    // Business Sectors
+    'customField.sector.technology': language === 'en' ? 'Technology' : 'Technologie',
+    'customField.sector.healthcare': language === 'en' ? 'Healthcare' : 'Gesundheitswesen',
+    'customField.sector.finance': language === 'en' ? 'Finance' : 'Finanzwesen',
+    'customField.sector.education': language === 'en' ? 'Education' : 'Bildung',
+    'customField.sector.retail': language === 'en' ? 'Retail' : 'Einzelhandel',
+    'customField.sector.manufacturing': language === 'en' ? 'Manufacturing' : 'Produktion',
+    'customField.sector.services': language === 'en' ? 'Services' : 'Dienstleistungen',
 
     // Organization (existing)
     'organization.notFound': language === 'en' ? 'No organization found' : 'Keine Organisation gefunden',
@@ -355,7 +550,12 @@ const getTranslations = (orgType, language) => {
     'members.status.inactive': 'Inaktives Mitglied',
     'members.status.suspended': 'Suspendiertes Mitglied',
     'members.addFirst': 'Erstes Mitglied hinzufügen',
-    'noMembers': 'Keine Mitglieder vorhanden'
+    'noMembers': 'Keine Mitglieder vorhanden',
+    // Verein specific Custom Fields overrides
+    'customField.breeding.addSpecies': 'Weitere Rasse hinzufügen',
+    'customField.communication.clubMeetings': 'Vereinstreffen',
+    'members.customFields.breedingData': 'Zuchtdaten',
+    'members.customFields.contactPreferences': 'Kommunikation'
   };
 
   // Verein English ERWEITERT
@@ -380,7 +580,12 @@ const getTranslations = (orgType, language) => {
     'members.status.inactive': 'Inactive Member',
     'members.status.suspended': 'Suspended Member',
     'members.addFirst': 'Add first Member',
-    'noMembers': 'No members available'
+    'noMembers': 'No members available',
+    // Club specific Custom Fields overrides
+    'customField.breeding.addSpecies': 'Add another species',
+    'customField.communication.clubMeetings': 'Club meetings',
+    'members.customFields.breedingData': 'Breeding Data',
+    'members.customFields.contactPreferences': 'Communication'
   };
 
   // Unternehmen Deutsch ERWEITERT
@@ -411,7 +616,11 @@ const getTranslations = (orgType, language) => {
     'members.leavingReason': 'Kündigungsgrund',
     'configuration.joiningSources.title': 'Akquisequellen verwalten',
     'configuration.joiningSources.labelPlaceholder': 'z.B. Online-Marketing',
-    'configuration.leavingReasons.title': 'Kündigungsgründe verwalten'
+    'configuration.leavingReasons.title': 'Kündigungsgründe verwalten',
+    // Company specific Custom Fields overrides
+    'customField.business.companyData': 'Unternehmensdaten',
+    'members.customFields.businessData': 'Unternehmensdaten',
+    'customField.communication.businessMeetings': 'Geschäftstermine'
   };
 
   // Unternehmen English ERWEITERT
@@ -442,7 +651,11 @@ const getTranslations = (orgType, language) => {
     'members.leavingReason': 'Cancellation Reason',
     'configuration.joiningSources.title': 'Manage Acquisition Sources',
     'configuration.joiningSources.labelPlaceholder': 'e.g. Online Marketing',
-    'configuration.leavingReasons.title': 'Manage Cancellation Reasons'
+    'configuration.leavingReasons.title': 'Manage Cancellation Reasons',
+    // Company specific Custom Fields overrides
+    'customField.business.companyData': 'Company Data',
+    'members.customFields.businessData': 'Business Data',
+    'customField.communication.businessMeetings': 'Business meetings'
   };
 
   // Return appropriate translations
