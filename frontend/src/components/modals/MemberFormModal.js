@@ -73,24 +73,43 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   } = useIBANValidation(formData.membershipData?.bankDetails?.iban || '');
 
   // ✅ NEW: Load Custom Fields Configuration
-  useEffect(() => {
-    const fetchCustomFields = async () => {
-      try {
-        setLoadingCustomFields(true);
-        const response = await axios.get(`${API_URL}/organization/config/custom-fields`);
-        setCustomFieldsConfig(response.data.customFields || { tabs: [] });
-      } catch (error) {
-        console.error('Error fetching custom fields config:', error);
-        setCustomFieldsConfig({ tabs: [] });
-      } finally {
-        setLoadingCustomFields(false);
-      }
-    };
-
-    if (isOpen) {
-      fetchCustomFields();
+useEffect(() => {
+  const fetchCustomFields = async () => {
+    try {
+      setLoadingCustomFields(true);
+      
+      // FIXED: Hauptkonfiguration laden (funktioniert definitiv)
+      const response = await axios.get(`http://localhost:5000/api/organization/config`);
+      
+      console.log('✅ Config Response:', response.data);
+      
+      // Custom Fields aus der Hauptkonfiguration extrahieren:
+      const customFields = response.data.config?.membershipConfig?.customFields || { tabs: [] };
+      
+      console.log('✅ Extracted Custom Fields:', customFields);
+      
+      setCustomFieldsConfig(customFields);
+      
+      // Debug: Multi-Entry Felder finden
+      const multiEntryFields = customFields.tabs
+        ?.flatMap(tab => tab.fields || [])
+        ?.filter(field => field.type === 'multi-entry');
+        
+      console.log('✅ Multi-Entry Fields:', multiEntryFields);
+      
+    } catch (error) {
+      console.error('❌ Error fetching config:', error);
+      setCustomFieldsConfig({ tabs: [] });
+    } finally {
+      setLoadingCustomFields(false);
     }
-  }, [isOpen]);
+  };
+
+  if (isOpen) {
+    fetchCustomFields();
+  }
+}, [isOpen]);
+
 
   // Load configured member statuses
   useEffect(() => {
