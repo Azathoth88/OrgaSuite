@@ -14,7 +14,7 @@ const configurationModule = require('./src/configuration/configuration');
 const dashboardModule = require('./src/dashboard/dashboard');
 
 // ✅ NEU: Bank-Routen hinzufügen
-const bankRoutes = require('./src/routes/banks');
+const bankRoutes = require('./src/routes/bank');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -98,32 +98,24 @@ app.get('/api/debug/db-status', async (req, res) => {
           like: !!Op?.like,
           gte: !!Op?.gte,
           lte: !!Op?.lte,
-          in: !!Op?.in
+          in: !!Op?.in,
+          ne: !!Op?.ne,
+          between: !!Op?.between,
+          notBetween: !!Op?.notBetween
         }
       },
-      connection: false,
-      tables: {}
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        port: PORT,
+        databaseUrl: !!process.env.DATABASE_URL
+      }
     };
 
-    if (models.sequelize) {
-      try {
-        await models.sequelize.authenticate();
-        status.connection = true;
-
-        const [results] = await models.sequelize.query(`
-          SELECT table_name 
-          FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          ORDER BY table_name;
-        `);
-
-        status.tables = results.map(r => r.table_name);
-      } catch (error) {
-        status.connectionError = error.message;
-      }
-    }
-
-    res.json(status);
+    res.json({
+      timestamp: new Date().toISOString(),
+      status: 'DEBUG',
+      ...status
+    });
   } catch (error) {
     logError('DB_STATUS', error);
     res.status(500).json({
@@ -133,82 +125,21 @@ app.get('/api/debug/db-status', async (req, res) => {
   }
 });
 
-// ✅ NEU: Bank-Import beim Server-Start
-async function initializeBankData() {
-  try {
-    console.log('🏦 [STARTUP] Checking for Bundesbank data...');
-    
-    const fs = require('fs');
-    const path = require('path');
-    const csvPath = path.join(__dirname, 'data/bundesbank/bundesbank.csv');
-    
-    if (!fs.existsSync(csvPath)) {
-      console.log('⚠️  [STARTUP] No Bundesbank CSV file found - skipping bank data import');
-      console.log(`    Expected at: ${csvPath}`);
-      return;
-    }
-    
-    console.log('📁 [STARTUP] Bundesbank CSV found, starting import...');
-    
-    // Teste Datenbankverbindung
-    if (!models.sequelize) {
-      console.error('❌ [STARTUP] Sequelize not initialized - skipping bank import');
-      return;
-    }
-    
-    // Teste Verbindung mit Retry-Logik
-    let dbConnected = false;
-    const maxRetries = 10;
-    
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        await models.sequelize.authenticate();
-        dbConnected = true;
-        console.log('✅ [STARTUP] Database connection established');
-        break;
-      } catch (error) {
-        console.log(`⏳ [STARTUP] Waiting for database... (${i + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-    
-    if (!dbConnected) {
-      console.error('❌ [STARTUP] Could not connect to database - skipping bank import');
-      return;
-    }
-    
-    // Import starten
-    const { importBundesbankData } = require('./data/bundesbank/import-banks');
-    
-    try {
-      const result = await importBundesbankData();
-      console.log('✅ [STARTUP] Bank data import completed successfully');
-      console.log(`📊 [STARTUP] Imported ${result.imported} bank records`);
-    } catch (error) {
-      console.error('❌ [STARTUP] Bank import failed:', error.message);
-      console.log('🚀 [STARTUP] Server will continue without bank data');
-    }
-    
-  } catch (error) {
-    console.error('💥 [STARTUP] Error during bank data initialization:', error);
-  }
-}
+// Enhanced IBAN validation for testing
+const { validateIBANWithLogging } = require('./src/utils/ibanUtils');
 
-// Dev-Endpoints
+// Development Routes (nur in Development-Mode)
 if (process.env.NODE_ENV === 'development') {
   app.get('/api/dev/test-iban', (req, res) => {
-    const { validateIBANWithLogging } = require('./src/utils/ibanUtils');
     const testIbans = [
       'DE89370400440532013000',
-      'DE12500105170648489890',
+      'GB82WEST12345698765432',
+      'FR1420041010050500013M02606',
       'AT611904300234573201',
       'CH9300762011623852957',
-      'FR1420041010050500013M02606',
-      'DE89370400440532013999',
-      'DE8937040044053201300',
-      'XX89370400440532013000',
+      'invalid-iban',
       '',
-      'INVALID',
+      null,
       'DE89 3704 0044 0532 0130 00'
     ];
 
@@ -251,6 +182,32 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+// Bank data initialization
+async function initializeBankData() {
+  try {
+    console.log('🏦 [BANK_INIT] Starting bank data initialization...');
+    
+    // Check if bank data already exists
+    const bankService = require('./src/services/bankService');
+    const status = await bankService.getStatus();
+    
+    if (status.totalBanks > 0) {
+      console.log(`✅ [BANK_INIT] Bank data already available: ${status.totalBanks} banks loaded`);
+      return;
+    }
+    
+    console.log('📥 [BANK_INIT] No bank data found, starting import...');
+    const { importBundesbankData } = require('./src/data/bundesbank/import-banks');
+    
+    const result = await importBundesbankData();
+    console.log('🎉 [BANK_INIT] Bank data import completed:', result);
+    
+  } catch (error) {
+    console.error('❌ [BANK_INIT] Failed to initialize bank data:', error);
+    // Don't crash the server if bank import fails
+  }
+}
+
 // Server startup mit fixierter Reihenfolge
 async function startServer() {
   console.log('🏢 ====================================');
@@ -265,20 +222,20 @@ async function startServer() {
     // ✅ Routen NACH der Modell-Initialisierung und VOR app.listen() registrieren
     // WICHTIGE REIHENFOLGE: Spezifischere Routen zuerst!
     
-    // Organization Routes
-    app.use('/api/organizations', organizationModule.createOrganizationRoutes(models));
+    // Organization Routes - ✅ KORRIGIERT: setupRoutes statt createOrganizationRoutes
+    app.use('/api/organizations', organizationModule.setupRoutes(models));
     console.log('✅ Organization routes registered');
 
-    // Member Routes
-    app.use('/api/members', membersModule.createMembersRoutes(models));
+    // Member Routes - ✅ KORRIGIERT: setupRoutes statt createMembersRoutes
+    app.use('/api/members', membersModule.setupRoutes(models));
     console.log('✅ Member routes registered');
 
-    // Configuration Routes
-    app.use('/api/configuration', configurationModule.createConfigurationRoutes(models));
+    // Configuration Routes - ✅ KORRIGIERT: setupRoutes statt createConfigurationRoutes
+    app.use('/api/configuration', configurationModule.setupRoutes(models));
     console.log('✅ Configuration routes registered');
 
-    // Dashboard Routes
-    app.use('/api/dashboard', dashboardModule.createDashboardRoutes(models));
+    // Dashboard Routes - ✅ KORRIGIERT: setupRoutes statt createDashboardRoutes
+    app.use('/api/dashboard', dashboardModule.setupRoutes(models));
     console.log('✅ Dashboard routes registered');
 
     // ✅ NEU: Bank-Routen registrieren
@@ -289,6 +246,7 @@ async function startServer() {
     app.get('/api/docs/banks', (req, res) => {
       res.json({
         title: 'Bank API Documentation',
+        version: '1.0.0',
         endpoints: {
           'GET /api/banks/lookup-iban/:iban': 'Bankdaten anhand IBAN ermitteln',
           'GET /api/banks/lookup-blz/:blz': 'Bankdaten anhand Bankleitzahl ermitteln',
