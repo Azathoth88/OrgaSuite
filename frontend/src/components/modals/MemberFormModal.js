@@ -4,7 +4,7 @@ import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
 import { useIBANValidation } from '../../utils/ibanUtils';
 // ✅ Custom Fields Import (wenn verfügbar)
-// import { CustomFieldRenderer, validateCustomField } from '../fields/CustomFieldComponents';
+import { CustomFieldRenderer, validateCustomField } from '../fields/CustomFieldComponents';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -268,94 +268,6 @@ useEffect(() => {
     return formData.membershipData?.customFields?.[tabKey]?.[fieldKey];
   };
 
-  // ✅ FALLBACK: Simple Custom Field Validation (wenn CustomFieldComponents nicht verfügbar)
-  const validateCustomField = (field, value) => {
-    if (field.required && (!value || (typeof value === 'string' && !value.trim()))) {
-      return t('validation.required', 'Pflichtfeld');
-    }
-    
-    if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      return t('validation.invalidEmail', 'Ungültige E-Mail-Adresse');
-    }
-    
-    if (field.type === 'number' && value) {
-      const num = parseFloat(value);
-      if (isNaN(num)) {
-        return 'Ungültige Zahl';
-      }
-      if (field.min !== undefined && num < field.min) {
-        return `Minimum: ${field.min}`;
-      }
-      if (field.max !== undefined && num > field.max) {
-        return `Maximum: ${field.max}`;
-      }
-    }
-    
-    return null;
-  };
-
-  // ✅ FALLBACK: Simple Custom Field Renderer
-  const CustomFieldRenderer = ({ field, value, onChange, error }) => {
-    const commonProps = {
-      value: value || '',
-      onChange: (e) => onChange(e.target.value),
-      className: `w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-        error ? 'border-red-300 bg-red-50' : 'border-gray-300'
-      }`,
-      disabled: loading
-    };
-
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          {field.label}
-          {field.required && <span className="text-red-500 ml-1">*</span>}
-        </label>
-        
-        {field.type === 'textarea' ? (
-          <textarea
-            {...commonProps}
-            rows={field.rows || 3}
-            placeholder={field.placeholder}
-          />
-        ) : field.type === 'select' ? (
-          <select {...commonProps}>
-            <option value="">{field.placeholder || 'Bitte wählen...'}</option>
-            {(field.options || []).map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : field.type === 'checkbox' ? (
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={!!value}
-              onChange={(e) => onChange(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
-              disabled={loading}
-            />
-            <span className="text-sm">{field.placeholder || field.label}</span>
-          </label>
-        ) : (
-          <input
-            type={field.type || 'text'}
-            {...commonProps}
-            placeholder={field.placeholder}
-          />
-        )}
-        
-        {field.description && (
-          <p className="mt-1 text-xs text-gray-500">{field.description}</p>
-        )}
-        
-        {error && (
-          <p className="mt-1 text-sm text-red-600">{error}</p>
-        )}
-      </div>
-    );
-  };
 
   // Enhanced form validation with custom fields
   const validateForm = () => {
