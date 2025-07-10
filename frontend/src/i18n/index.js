@@ -250,6 +250,8 @@ const getTranslations = (orgType, language) => {
     'members.memberSince': orgType === 'verein' 
       ? (language === 'en' ? 'Member since' : 'Mitglied seit')
       : (language === 'en' ? 'Customer since' : 'Kunde seit'),
+    'members.mandateReference': language === 'en' ? 'Mandate Reference' : 'Mandatsreferenz',
+    'members.mandateDate': language === 'en' ? 'Mandate Date' : 'Mandatsdatum',
 
     // ✅ NEUE MEMBER-FELDER
     'members.joiningSource': language === 'en' ? 'Joining Source' : 'Beitrittsquelle',
@@ -435,6 +437,7 @@ const getTranslations = (orgType, language) => {
     'organization.bank.invalidIban': language === 'en' ? 'Invalid IBAN format' : 'Ungültiges IBAN-Format',
     'organization.bank.infoTitle': language === 'en' ? 'Usage of Bank Details' : 'Verwendung der Bankdaten',
     'organization.bank.infoDesc': language === 'en' ? 'These bank details will be used for outgoing invoices, payment requests and other documents.' : 'Diese Bankverbindung wird für ausgehende Rechnungen, Zahlungsaufforderungen und andere Dokumente verwendet.',
+    'organization.bank.autoDetected': language === 'en' ? 'Automatically detected' : 'Automatisch ermittelt',
 
     // Dashboard (existing)
     'dashboard.modules': language === 'en' ? 'Modules' : 'Module',

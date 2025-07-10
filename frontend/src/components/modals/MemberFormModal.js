@@ -1,9 +1,8 @@
-// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix + Kündigungsgründen + Beitrittsquellen
+// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix + Kündigungsgründen + Beitrittsquellen + BIC-Lookup
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
-import { useIBANValidation } from '../../utils/ibanUtils';
-// ✅ Custom Fields Import (wenn verfügbar)
+import { useIBANValidation, formatIBAN } from '../../utils/ibanUtils';
 import { CustomFieldRenderer, validateCustomField } from '../fields/CustomFieldComponents';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -68,93 +67,122 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const [fieldErrors, setFieldErrors] = useState({});
   const [activeTab, setActiveTab] = useState('personal');
 
-  // IBAN Validation Hook
+  // ERWEITERTE IBAN Validation Hook mit Bank-Lookup
   const {
     iban,
     validation: ibanValidation,
     handleIbanChange,
     isValid: isIbanValid,
     error: ibanError,
-    formatted: ibanFormatted
+    formatted: ibanFormatted,
+    countryCode: ibanCountryCode,
+    bankCode: ibanBankCode,
+    bic: lookupBic,
+    bankName: lookupBankName,
+    bankLoading,
+    bankError
   } = useIBANValidation(formData.membershipData?.bankDetails?.iban || '');
 
-  // ✅ Custom Fields Configuration laden
+  // ✅ NEU: Automatisch BIC und Bankname aktualisieren, wenn sie über die API gefunden wurden
   useEffect(() => {
-    const fetchCustomFields = async () => {
+    if (isIbanValid && lookupBic && !bankLoading) {
+      setFormData(prev => ({
+        ...prev,
+        membershipData: {
+          ...prev.membershipData,
+          bankDetails: {
+            ...prev.membershipData.bankDetails,
+            bic: lookupBic,
+            bankName: lookupBankName
+          }
+        }
+      }));
+    }
+  }, [lookupBic, lookupBankName, isIbanValid, bankLoading]);
+
+  // ✅ Konfiguration aus Organization laden
+  useEffect(() => {
+    const fetchConfiguration = async () => {
       try {
+        setLoadingStatuses(true);
+        setLoadingSourcesAndReasons(true);
         setLoadingCustomFields(true);
-        const response = await axios.get(`${API_URL}/organization/config`);
         
-        console.log('✅ Config Response:', response.data);
+        // Organization-Daten laden (enthält alle Settings)
+        const orgResponse = await axios.get(`${API_URL}/organization`);
         
-        const customFields = response.data.config?.membershipConfig?.customFields || { tabs: [] };
-        setCustomFieldsConfig(customFields);
-        
+        if (orgResponse.data && orgResponse.data.settings) {
+          const settings = orgResponse.data.settings;
+          const membershipConfig = settings.membershipConfig || {};
+          
+          // Member-Status
+          const statuses = membershipConfig.statuses || [];
+          setMemberStatuses(statuses);
+          
+          // Währung
+          const currency = membershipConfig.defaultCurrency || 'EUR';
+          setDefaultCurrency(currency);
+          
+          // Beitrittsquellen
+          const sources = membershipConfig.joiningSources || [];
+          setJoiningSources(sources);
+          
+          // Kündigungsgründe
+          const reasons = membershipConfig.leavingReasons || [];
+          setLeavingReasons(reasons);
+          
+          // Custom Fields
+          const customFields = membershipConfig.customFields || { tabs: [] };
+          setCustomFieldsConfig(customFields);
+          
+          console.log('✅ Loaded configuration from organization:', {
+            statuses: statuses.length,
+            sources: sources.length,
+            reasons: reasons.length,
+            currency,
+            customFieldTabs: customFields.tabs?.length || 0
+          });
+          
+          // Default status setzen
+          if (!formData.membershipData.membershipStatus && statuses.length > 0) {
+            const defaultStatus = statuses.find(s => s.default === true) || statuses[0];
+            setFormData(prev => ({
+              ...prev,
+              membershipData: {
+                ...prev.membershipData,
+                membershipStatus: defaultStatus.key
+              }
+            }));
+          }
+        }
       } catch (error) {
-        console.error('❌ Error fetching config:', error);
+        console.error('❌ Error fetching configuration:', error);
+        
+        // Fallback auf member-statuses Endpunkt
+        try {
+          const statusResponse = await axios.get(`${API_URL}/organization/member-statuses`);
+          if (statusResponse.data.statuses) {
+            setMemberStatuses(statusResponse.data.statuses);
+            setDefaultCurrency(statusResponse.data.stats?.defaultCurrency || 'EUR');
+            console.log('✅ Loaded statuses from fallback endpoint');
+          }
+        } catch (statusError) {
+          console.error('❌ Error fetching member statuses:', statusError);
+        }
+        
+        // Setze leere Arrays für Sources und Reasons
+        setJoiningSources([]);
+        setLeavingReasons([]);
         setCustomFieldsConfig({ tabs: [] });
       } finally {
+        setLoadingStatuses(false);
+        setLoadingSourcesAndReasons(false);
         setLoadingCustomFields(false);
       }
     };
 
     if (isOpen) {
-      fetchCustomFields();
-    }
-  }, [isOpen]);
-
-  // ✅ ERWEITERT: Alle Konfigurationsdaten laden (Statuses + Sources + Reasons + Currency)
-  useEffect(() => {
-    const fetchConfigData = async () => {
-      try {
-        setLoadingStatuses(true);
-        setLoadingSourcesAndReasons(true);
-        
-        // Hauptkonfiguration laden
-        const response = await axios.get(`${API_URL}/organization/config`);
-        const config = response.data.config;
-        
-        // Alle Konfigurationsdaten extrahieren
-        const statuses = config.membershipConfig?.statuses || [];
-        const currency = config.membershipConfig?.defaultCurrency || 'EUR';
-        const sources = config.membershipConfig?.joiningSources || [];  // ✅ NEU
-        const reasons = config.membershipConfig?.leavingReasons || [];   // ✅ NEU
-        
-        setMemberStatuses(statuses);
-        setDefaultCurrency(currency);
-        setJoiningSources(sources);   // ✅ NEU
-        setLeavingReasons(reasons);   // ✅ NEU
-        
-        console.log('✅ Loaded statuses:', statuses);
-        console.log('✅ Loaded sources:', sources);
-        console.log('✅ Loaded reasons:', reasons);
-        console.log('✅ Default currency:', currency);
-        
-        // Default status setzen wenn nötig
-        if (!formData.membershipData.membershipStatus && statuses.length > 0) {
-          const defaultStatus = statuses.find(s => s.isDefault) || statuses[0];
-          setFormData(prev => ({
-            ...prev,
-            membershipData: {
-              ...prev.membershipData,
-              membershipStatus: defaultStatus.key
-            }
-          }));
-        }
-      } catch (error) {
-        console.error('❌ Error fetching config:', error);
-        setMemberStatuses([]);
-        setJoiningSources([]);  // ✅ NEU
-        setLeavingReasons([]);  // ✅ NEU
-        setDefaultCurrency('EUR');
-      } finally {
-        setLoadingStatuses(false);
-        setLoadingSourcesAndReasons(false); // ✅ NEU
-      }
-    };
-
-    if (isOpen) {
-      fetchConfigData();
+      fetchConfiguration();
     }
   }, [isOpen]);
 
@@ -1087,7 +1115,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Bank Tab - VOLLSTÄNDIG */}
+            {/* ERWEITERTE Bank Tab mit automatischer BIC-Ableitung */}
             {activeTab === 'bank' && (
               <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-lg mb-4">
@@ -1122,9 +1150,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('organization.bank.iban', 'IBAN')}
-                      {iban && ibanValidation.countryCode && (
+                      {iban && ibanCountryCode && (
                         <span className="ml-2 text-xs text-blue-600">
-                          ({ibanValidation.countryCode})
+                          ({ibanCountryCode})
                         </span>
                       )}
                     </label>
@@ -1152,23 +1180,80 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                       placeholder="DE89 3704 0044 0532 0130 00"
                       disabled={loading}
                     />
-                    {fieldErrors.iban && (
-                      <p className="mt-1 text-sm text-red-600">{fieldErrors.iban}</p>
-                    )}
+                    
+                    {/* ERWEITERTE IBAN-Validierung und Bank-Lookup Feedback */}
                     {iban && (
-                      <div className="mt-1">
+                      <div className="mt-2">
                         {isIbanValid ? (
-                          <p className="text-sm text-green-600">✅ IBAN ist gültig</p>
+                          <div>
+                            <div className="flex items-center text-green-700 text-sm">
+                              <span className="mr-2">✅</span>
+                              <span>
+                                IBAN ist gültig 
+                                {ibanCountryCode && ` (${ibanCountryCode})`}
+                                {ibanBankCode && ` - BLZ: ${ibanBankCode}`}
+                              </span>
+                            </div>
+                            {lookupBic && lookupBankName && !bankLoading && (
+                              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                                <div className="text-blue-700">
+                                  <span className="font-medium">Bank gefunden:</span> {lookupBankName}
+                                </div>
+                                <div className="text-blue-600 text-xs mt-1">
+                                  BIC wird automatisch eingetragen
+                                </div>
+                              </div>
+                            )}
+                            {bankError && !bankLoading && (
+                              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-sm">
+                                <div className="text-amber-700">
+                                  ⚠️ {bankError}
+                                </div>
+                                <div className="text-amber-600 text-xs mt-1">
+                                  BIC und Bankname müssen manuell eingegeben werden
+                                </div>
+                              </div>
+                            )}
+                            {bankLoading && (
+                              <div className="mt-2 text-sm text-gray-600">
+                                <span className="inline-block animate-spin mr-2">⏳</span>
+                                Bankdaten werden abgerufen...
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <p className="text-sm text-red-600">❌ {ibanError}</p>
+                          <div className="flex items-start text-red-700 text-sm">
+                            <span className="mr-2 mt-0.5">❌</span>
+                            <div>
+                              <div className="font-medium">IBAN-Validierung fehlgeschlagen:</div>
+                              <div className="mt-1">{ibanError}</div>
+                            </div>
+                          </div>
                         )}
                       </div>
+                    )}
+                    
+                    {/* Formatierte IBAN Vorschau */}
+                    {iban && isIbanValid && ibanFormatted && (
+                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                        <span className="text-blue-700 font-medium">Formatierte IBAN:</span>
+                        <div className="font-mono text-blue-800 mt-1">{ibanFormatted}</div>
+                      </div>
+                    )}
+                    
+                    {fieldErrors.iban && !iban && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.iban}</p>
                     )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('organization.bank.bic', 'BIC')}
+                      {lookupBic && (
+                        <span className="ml-2 text-xs text-green-600">
+                          ✅ {t('organization.bank.autoDetected', 'Automatisch ermittelt')}
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
@@ -1183,15 +1268,22 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                           }
                         }
                       })}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono ${
+                        lookupBic ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                      }`}
                       placeholder="COBADEFFXXX"
-                      disabled={loading}
+                      disabled={loading || (lookupBic && isIbanValid)}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('members.bankName', 'Bankbezeichnung')}
+                      {lookupBankName && (
+                        <span className="ml-2 text-xs text-green-600">
+                          ✅ {t('organization.bank.autoDetected', 'Automatisch ermittelt')}
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
@@ -1206,9 +1298,11 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                           }
                         }
                       })}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                        lookupBankName ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                      }`}
                       placeholder="z.B. Commerzbank AG"
-                      disabled={loading}
+                      disabled={loading || (lookupBankName && isIbanValid)}
                     />
                   </div>
 
