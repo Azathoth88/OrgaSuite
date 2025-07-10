@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
 import { useIBANValidation, formatIBAN } from '../../utils/ibanUtils';
@@ -10,7 +10,7 @@ const OrganizationView = () => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState(organization || {});
 
-  // IBAN-Validierung Hook
+  // IBAN-Validierung Hook mit Bank-Lookup
   const {
     iban,
     validation: ibanValidation,
@@ -19,8 +19,26 @@ const OrganizationView = () => {
     error: ibanError,
     formatted: ibanFormatted,
     countryCode: ibanCountryCode,
-    bankCode: ibanBankCode
+    bankCode: ibanBankCode,
+    bic: lookupBic,
+    bankName: lookupBankName,
+    bankLoading,
+    bankError
   } = useIBANValidation(formData.bankDetails?.iban || '');
+
+  // Automatisch BIC und Bankname aktualisieren, wenn sie über die API gefunden wurden
+  useEffect(() => {
+    if (editing && isIbanValid && lookupBic && !bankLoading) {
+      setFormData(prev => ({
+        ...prev,
+        bankDetails: {
+          ...prev.bankDetails,
+          bic: lookupBic,
+          bankName: lookupBankName
+        }
+      }));
+    }
+  }, [lookupBic, lookupBankName, isIbanValid, bankLoading, editing]);
 
   const handleSave = async () => {
     // IBAN-Validierung vor dem Speichern
@@ -312,7 +330,7 @@ const OrganizationView = () => {
           </div>
         </div>
 
-        {/* Bank Details Card mit verbesserter IBAN-Validierung */}
+        {/* Bank Details Card mit automatischem BIC/Bank-Lookup */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-6 flex items-center">
@@ -343,7 +361,7 @@ const OrganizationView = () => {
                   )}
                 </div>
 
-                {/* VERBESSERTE IBAN-EINGABE */}
+                {/* ERWEITERTE IBAN-EINGABE MIT BANK-LOOKUP */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('organization.bank.iban', 'IBAN')}
@@ -351,6 +369,11 @@ const OrganizationView = () => {
                       <span className="ml-2 text-xs text-blue-600">
                         ({ibanCountryCode}
                         {ibanBankCode && ` - BLZ: ${ibanBankCode}`})
+                      </span>
+                    )}
+                    {bankLoading && (
+                      <span className="ml-2 text-xs text-amber-600">
+                        🔄 {t('organization.bank.loadingBankData', 'Lade Bankdaten...')}
                       </span>
                     )}
                   </label>
@@ -368,17 +391,39 @@ const OrganizationView = () => {
                         placeholder="DE89 3704 0044 0532 0130 00"
                       />
                       
-                      {/* IBAN-Validierung Feedback */}
+                      {/* IBAN-Validierung und Bank-Lookup Feedback */}
                       {iban && (
                         <div className="mt-2">
                           {isIbanValid ? (
-                            <div className="flex items-center text-green-700 text-sm">
-                              <span className="mr-2">✅</span>
-                              <span>
-                                IBAN ist gültig 
-                                {ibanCountryCode && ` (${ibanCountryCode})`}
-                                {ibanBankCode && ` - BLZ: ${ibanBankCode}`}
-                              </span>
+                            <div>
+                              <div className="flex items-center text-green-700 text-sm">
+                                <span className="mr-2">✅</span>
+                                <span>
+                                  IBAN ist gültig 
+                                  {ibanCountryCode && ` (${ibanCountryCode})`}
+                                  {ibanBankCode && ` - BLZ: ${ibanBankCode}`}
+                                </span>
+                              </div>
+                              {lookupBic && lookupBankName && !bankLoading && (
+                                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                                  <div className="text-blue-700">
+                                    <span className="font-medium">Bank gefunden:</span> {lookupBankName}
+                                  </div>
+                                  <div className="text-blue-600 text-xs mt-1">
+                                    BIC wird automatisch eingetragen
+                                  </div>
+                                </div>
+                              )}
+                              {bankError && !bankLoading && (
+                                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-sm">
+                                  <div className="text-amber-700">
+                                    ⚠️ {bankError}
+                                  </div>
+                                  <div className="text-amber-600 text-xs mt-1">
+                                    BIC und Bankname müssen manuell eingegeben werden
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="flex items-start text-red-700 text-sm">
@@ -433,6 +478,11 @@ const OrganizationView = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('organization.bank.bic', 'BIC / SWIFT')}
+                    {editing && lookupBic && (
+                      <span className="ml-2 text-xs text-green-600">
+                        ✅ {t('organization.bank.autoDetected', 'Automatisch ermittelt')}
+                      </span>
+                    )}
                   </label>
                   {editing ? (
                     <input
@@ -442,8 +492,11 @@ const OrganizationView = () => {
                         ...formData,
                         bankDetails: { ...(formData.bankDetails || {}), bic: e.target.value.toUpperCase() }
                       })}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono ${
+                        lookupBic ? 'bg-green-50 border-green-300' : 'border-gray-300'
+                      }`}
                       placeholder="COBADEFFXXX"
+                      readOnly={!!lookupBic}
                     />
                   ) : (
                     <div className="p-3 bg-gray-50 rounded-lg font-mono">
@@ -455,6 +508,11 @@ const OrganizationView = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('organization.bank.bankName', 'Bankname')}
+                    {editing && lookupBankName && (
+                      <span className="ml-2 text-xs text-green-600">
+                        ✅ {t('organization.bank.autoDetected', 'Automatisch ermittelt')}
+                      </span>
+                    )}
                   </label>
                   {editing ? (
                     <input
@@ -464,8 +522,11 @@ const OrganizationView = () => {
                         ...formData,
                         bankDetails: { ...(formData.bankDetails || {}), bankName: e.target.value }
                       })}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        lookupBankName ? 'bg-green-50 border-green-300' : 'border-gray-300'
+                      }`}
                       placeholder={t('organization.bank.bankNamePlaceholder', 'z.B. Commerzbank AG')}
+                      readOnly={!!lookupBankName}
                     />
                   ) : (
                     <div className="p-3 bg-gray-50 rounded-lg">
@@ -487,6 +548,11 @@ const OrganizationView = () => {
                   <p className="text-sm text-blue-700 mt-1">
                     {t('organization.bank.infoDesc', 'Diese Bankverbindung wird für ausgehende Rechnungen, Zahlungsaufforderungen und andere Dokumente verwendet.')}
                   </p>
+                  {editing && (
+                    <p className="text-sm text-blue-700 mt-2 font-medium">
+                      💡 {t('organization.bank.autoLookupInfo', 'BIC und Bankname werden automatisch ermittelt, sobald Sie eine gültige IBAN eingeben.')}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

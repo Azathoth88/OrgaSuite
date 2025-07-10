@@ -263,7 +263,7 @@ async function startServer() {
     // WICHTIGE REIHENFOLGE: Spezifischere Routen zuerst!
     
     // Organization Routes - ✅ KORRIGIERT: setupRoutes statt createOrganizationRoutes
-    app.use('/api/organizations', organizationModule.setupRoutes(models));
+    app.use('/api/organization', organizationModule.setupRoutes(models));
     console.log('✅ Organization routes registered');
 
     // Member Routes - ✅ KORRIGIERT: setupRoutes statt createMembersRoutes
