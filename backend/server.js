@@ -16,6 +16,9 @@ const dashboardModule = require('./src/dashboard/dashboard');
 // ✅ NEU: Bank-Routen hinzufügen
 const bankRoutes = require('./src/routes/bank');
 
+// ✅ FIX: Import der Bank-Import-Funktion
+const { importBundesbankData } = require('./data/bundesbank/import-banks');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -182,25 +185,62 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
-// Bank data initialization
+// ✅ FIX: Bank data initialization komplett überarbeitet
 async function initializeBankData() {
   try {
     console.log('🏦 [BANK_INIT] Starting bank data initialization...');
     
-    // Check if bank data already exists
-    const bankService = require('./src/services/bankService');
-    const status = await bankService.getStatus();
+    // Direkter Datenbankzugriff für Status-Check
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      user: process.env.POSTGRES_USER || 'orgasuite_user',
+      host: process.env.POSTGRES_HOST || 'postgres',
+      database: process.env.POSTGRES_DB || 'orgasuite',
+      password: process.env.POSTGRES_PASSWORD || 'orgasuite_password',
+      port: process.env.POSTGRES_PORT || 5432,
+    });
     
-    if (status.totalBanks > 0) {
-      console.log(`✅ [BANK_INIT] Bank data already available: ${status.totalBanks} banks loaded`);
-      return;
+    try {
+      // Prüfe ob Tabelle existiert und Daten enthält
+      const checkQuery = `
+        SELECT COUNT(*) as count 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'german_banks'
+      `;
+      
+      const tableExists = await pool.query(checkQuery);
+      
+      if (tableExists.rows[0].count === '0') {
+        console.log('📥 [BANK_INIT] Bank table does not exist, creating and importing...');
+        const result = await importBundesbankData();
+        console.log('🎉 [BANK_INIT] Bank data import completed:', result);
+      } else {
+        // Tabelle existiert, prüfe ob Daten vorhanden sind
+        const countQuery = 'SELECT COUNT(*) as total FROM german_banks';
+        const countResult = await pool.query(countQuery);
+        const totalBanks = parseInt(countResult.rows[0].total);
+        
+        if (totalBanks === 0) {
+          console.log('📥 [BANK_INIT] Bank table empty, starting import...');
+          const result = await importBundesbankData();
+          console.log('🎉 [BANK_INIT] Bank data import completed:', result);
+        } else {
+          console.log(`✅ [BANK_INIT] Bank data already available: ${totalBanks} banks loaded`);
+        }
+      }
+    } catch (dbError) {
+      // Wenn die Tabelle nicht existiert, importiere die Daten
+      if (dbError.code === '42P01') { // table does not exist
+        console.log('📥 [BANK_INIT] Bank table does not exist, creating and importing...');
+        const result = await importBundesbankData();
+        console.log('🎉 [BANK_INIT] Bank data import completed:', result);
+      } else {
+        throw dbError;
+      }
+    } finally {
+      await pool.end();
     }
-    
-    console.log('📥 [BANK_INIT] No bank data found, starting import...');
-    const { importBundesbankData } = require('./src/data/bundesbank/import-banks');
-    
-    const result = await importBundesbankData();
-    console.log('🎉 [BANK_INIT] Bank data import completed:', result);
     
   } catch (error) {
     console.error('❌ [BANK_INIT] Failed to initialize bank data:', error);

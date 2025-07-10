@@ -47,14 +47,15 @@ async function createBankSchema(client) {
 
     -- Trigger für updated_at
     CREATE OR REPLACE FUNCTION update_updated_at_column()
-    RETURNS TRIGGER AS $
+    RETURNS TRIGGER AS $$
     BEGIN
         NEW.updated_at = CURRENT_TIMESTAMP;
         RETURN NEW;
     END;
-    $ language 'plpgsql';
+    $$ language 'plpgsql';
 
-    CREATE TRIGGER IF NOT EXISTS update_german_banks_updated_at 
+    DROP TRIGGER IF EXISTS update_german_banks_updated_at ON german_banks;
+    CREATE TRIGGER update_german_banks_updated_at 
         BEFORE UPDATE ON german_banks 
         FOR EACH ROW 
         EXECUTE FUNCTION update_updated_at_column();
@@ -93,49 +94,72 @@ async function importBundesbankData() {
     
     const banks = [];
     
-    // CSV-Datei lesen
+    // CSV-Datei lesen - Angepasst für Ihr Format
     await new Promise((resolve, reject) => {
-      fs.createReadStream(csvFilePath)
+      fs.createReadStream(csvFilePath, { encoding: 'latin1' }) // ANSI/Windows-1252
         .pipe(csv({
-          separator: '\t', // Tab-getrennt, falls nötig anpassen
-          headers: [
-            'bankleitzahl',
-            'merkmal', 
-            'bezeichnung',
-            'plz',
-            'ort',
-            'kurzbezeichnung',
-            'pan',
-            'bic',
-            'pruefzifferberechnungsmethode',
-            'datensatznummer',
-            'aenderungskennzeichen',
-            'bankleitzahllöschung',
-            'nachfolge_bankleitzahl'
-          ]
+          separator: ';',     // Semikolon als Trennzeichen
+          headers: true,      // Erste Zeile enthält Header
+          quote: '"',         // Anführungszeichen
+          strict: false,      // Nicht so strikt bei Parsing-Fehlern
+          skipLinesWithError: false
         }))
+        .on('headers', (headers) => {
+          console.log('📋 [BANK_IMPORT] CSV Headers found:', headers.slice(0, 5).join(', '), '...');
+        })
         .on('data', (row) => {
-          // Nur Einträge mit gültiger BIC importieren
-          if (row.bic && row.bic.trim() && row.bic !== 'undefined') {
+          // Normalisiere die Feldnamen (falls Header Umlaute enthalten)
+          const normalizedRow = {};
+          for (const [key, value] of Object.entries(row)) {
+            const normalizedKey = key
+              .toLowerCase()
+              .replace('ä', 'ae')
+              .replace('ö', 'oe')
+              .replace('ü', 'ue')
+              .replace('ß', 'ss')
+              .replace(/[^a-z0-9]/g, '');
+            normalizedRow[normalizedKey] = value;
+          }
+          
+          // Importiere ALLE Banken (nicht nur die mit BIC)
+          const bankleitzahl = normalizedRow.bankleitzahl || row.Bankleitzahl || row.bankleitzahl;
+          
+          if (bankleitzahl && bankleitzahl.trim()) {
             banks.push({
-              bankleitzahl: row.bankleitzahl?.trim() || '',
-              merkmal: row.merkmal?.trim() || '',
-              bezeichnung: row.bezeichnung?.trim() || '',
-              plz: row.plz?.trim() || '',
-              ort: row.ort?.trim() || '',
-              kurzbezeichnung: row.kurzbezeichnung?.trim() || '',
-              pan: row.pan?.trim() || '',
-              bic: row.bic?.trim() || '',
-              pruefzifferberechnungsmethode: row.pruefzifferberechnungsmethode?.trim() || '',
-              datensatznummer: row.datensatznummer?.trim() || '',
-              aenderungskennzeichen: row.aenderungskennzeichen?.trim() || '',
-              bankleitzahllöschung: row.bankleitzahllöschung?.trim() || '',
-              nachfolge_bankleitzahl: row.nachfolge_bankleitzahl?.trim() || ''
+              bankleitzahl: bankleitzahl.trim(),
+              merkmal: (normalizedRow.merkmal || row.Merkmal || '').trim(),
+              bezeichnung: (normalizedRow.bezeichnung || row.Bezeichnung || '').trim(),
+              plz: (normalizedRow.plz || row.PLZ || '').trim(),
+              ort: (normalizedRow.ort || row.Ort || '').trim(),
+              kurzbezeichnung: (normalizedRow.kurzbezeichnung || row.Kurzbezeichnung || '').trim(),
+              pan: (normalizedRow.pan || row.PAN || '').trim(),
+              bic: (normalizedRow.bic || row.BIC || '').trim(),
+              pruefzifferberechnungsmethode: (normalizedRow.prfzifferberechnungsmethode || 
+                                              normalizedRow.pruefzifferberechnungsmethode || 
+                                              row['Prüfzifferberechnungsmethode'] || 
+                                              row['Pr�fzifferberechnungsmethode'] || '').trim(),
+              datensatznummer: (normalizedRow.datensatznummer || row.Datensatznummer || '').trim(),
+              aenderungskennzeichen: (normalizedRow.nderungskennzeichen || 
+                                     normalizedRow.aenderungskennzeichen || 
+                                     row['Änderungskennzeichen'] || 
+                                     row['�nderungskennzeichen'] || '').trim(),
+              bankleitzahllöschung: (normalizedRow.bankleitzahllschung || 
+                                    normalizedRow.bankleitzahllöschung || 
+                                    row['Bankleitzahllöschung'] || 
+                                    row['Bankleitzahll�schung'] || '').trim(),
+              nachfolge_bankleitzahl: (normalizedRow.nachfolgebankleitzahl || 
+                                      row['Nachfolge-Bankleitzahl'] || '').trim()
             });
           }
         })
-        .on('end', resolve)
-        .on('error', reject);
+        .on('end', () => {
+          console.log(`✅ [BANK_IMPORT] CSV parsing complete`);
+          resolve();
+        })
+        .on('error', (error) => {
+          console.error('❌ [BANK_IMPORT] CSV parsing error:', error);
+          reject(error);
+        });
     });
     
     console.log(`📊 [BANK_IMPORT] Parsed ${banks.length} bank records`);
@@ -153,9 +177,9 @@ async function importBundesbankData() {
           pan, bic, pruefzifferberechnungsmethode, datensatznummer,
           aenderungskennzeichen, bankleitzahllöschung, nachfolge_bankleitzahl
         ) VALUES ${batch.map((_, idx) => 
-          `(${idx * 13 + 1}, ${idx * 13 + 2}, ${idx * 13 + 3}, ${idx * 13 + 4}, 
-           ${idx * 13 + 5}, ${idx * 13 + 6}, ${idx * 13 + 7}, ${idx * 13 + 8},
-           ${idx * 13 + 9}, ${idx * 13 + 10}, ${idx * 13 + 11}, ${idx * 13 + 12}, ${idx * 13 + 13})`
+          `($${idx * 13 + 1}, $${idx * 13 + 2}, $${idx * 13 + 3}, $${idx * 13 + 4}, 
+           $${idx * 13 + 5}, $${idx * 13 + 6}, $${idx * 13 + 7}, $${idx * 13 + 8},
+           $${idx * 13 + 9}, $${idx * 13 + 10}, $${idx * 13 + 11}, $${idx * 13 + 12}, $${idx * 13 + 13})`
         ).join(', ')}
         ON CONFLICT (bankleitzahl) DO UPDATE SET
           bezeichnung = EXCLUDED.bezeichnung,
