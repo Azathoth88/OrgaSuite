@@ -535,7 +535,7 @@ const ConfigurationView = () => {
     }
   ];
 
-  // Field type options
+  // Field type options - ✅ ERWEITERT UM MULTI-ENTRY-DATE
   const fieldTypeOptions = [
     { value: 'text', label: 'Text (einzeilig)', description: 'Einfaches Textfeld' },
     { value: 'textarea', label: 'Text (mehrzeilig)', description: 'Großes Textfeld für längere Eingaben' },
@@ -544,7 +544,9 @@ const ConfigurationView = () => {
     { value: 'checkbox', label: 'Checkbox', description: 'Ja/Nein Auswahl' },
     { value: 'select', label: 'Dropdown (Einzelauswahl)', description: 'Auswahl aus vorgegebenen Optionen' },
     { value: 'multiselect', label: 'Dropdown (Mehrfachauswahl)', description: 'Mehrere Optionen auswählbar' },
-    { value: 'multi-entry', label: 'Multi-Entry', description: 'Mehrere Einträge mit Bemerkungen (z.B. Rassen)' }
+    { value: 'multi-entry', label: 'Multi-Entry', description: 'Mehrere Einträge mit Bemerkungen (z.B. Rassen)' },
+    // ✅ NEU: Multi-Entry Date
+    { value: 'multi-entry-date', label: 'Multi-Entry (Datum)', description: 'Mehrere Datum + Bemerkung Einträge' }
   ];
 
   // Icon options for tabs
@@ -1486,6 +1488,63 @@ const ConfigurationView = () => {
                                 </div>
                               </div>
                             )}
+
+                            {/* ✅ NEU: Multi-Entry Date Konfiguration */}
+                            {field.type === 'multi-entry-date' && (
+                              <div className="mt-4 p-3 bg-gray-50 rounded">
+                                <label className="block text-xs font-medium text-gray-700 mb-2">
+                                  Multi-Entry Datum Konfiguration
+                                </label>
+                                
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Bemerkungsfeld Label
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={field.entryConfig?.remarkLabel || ''}
+                                    onChange={(e) => updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                      ...field.entryConfig,
+                                      remarkLabel: e.target.value
+                                    })}
+                                    className="w-full p-1 text-sm border border-gray-300 rounded"
+                                    placeholder="z.B. Bemerkung, Details, Beschreibung"
+                                  />
+                                </div>
+
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Bemerkungsfeld Platzhalter
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={field.entryConfig?.remarkPlaceholder || ''}
+                                    onChange={(e) => updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                      ...field.entryConfig,
+                                      remarkPlaceholder: e.target.value
+                                    })}
+                                    className="w-full p-1 text-sm border border-gray-300 rounded"
+                                    placeholder="z.B. Zusätzliche Informationen..."
+                                  />
+                                </div>
+
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Button Text
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={field.entryConfig?.addButtonText || ''}
+                                    onChange={(e) => updateFieldEntryConfig(tabIndex, fieldIndex, {
+                                      ...field.entryConfig,
+                                      addButtonText: e.target.value
+                                    })}
+                                    className="w-full p-1 text-sm border border-gray-300 rounded"
+                                    placeholder="z.B. Datum hinzufügen, Termin hinzufügen"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                         
@@ -1609,6 +1668,7 @@ const ConfigurationView = () => {
               <li>• {t('configuration.info.statusColors', 'Farben helfen bei der visuellen Unterscheidung der Status in Listen und Berichten')}</li>
               <li>• <strong>Custom Fields erweitern das Mitgliederformular um benutzerdefinierte Tabs und Felder</strong></li>
               <li>• Multi-Entry Felder sind perfekt für Zuchtdaten (Rassen + Bemerkungen)</li>
+              <li>• <strong>Multi-Entry (Datum) Felder sind ideal für Termine, Impfungen, Ereignisse</strong></li>
               <li>• Alle Custom Field Daten werden in membershipData.customFields gespeichert</li>
             </ul>
           </div>

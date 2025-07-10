@@ -68,7 +68,16 @@ function validateCustomFields(customFields) {
           errors.push(`${fieldPath}: multi-entry fields require entryConfig.remarkLabel`);
         }
       }
-      
+      if (field.type === 'multi-entry-date') {
+        if (!field.entryConfig) {
+          errors.push(`${fieldPath}: multi-entry-date fields require entryConfig object`);
+        } else {
+          if (!field.entryConfig.remarkLabel) {
+            errors.push(`${fieldPath}: multi-entry-date fields require entryConfig.remarkLabel`);
+          }
+        }
+    }
+
       if (typeof field.position !== 'number' || field.position < 0) {
         errors.push(`${fieldPath}: position must be a non-negative number`);
       }

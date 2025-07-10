@@ -136,7 +136,9 @@ const getTranslations = (orgType, language) => {
     'configuration.fieldType.multiselectDesc': language === 'en' ? 'Multiple options selectable' : 'Mehrere Optionen auswählbar',
     'configuration.fieldType.multiEntry': language === 'en' ? 'Multi-Entry' : 'Multi-Entry',
     'configuration.fieldType.multiEntryDesc': language === 'en' ? 'Multiple entries with remarks (e.g. breeds)' : 'Mehrere Einträge mit Bemerkungen (z.B. Rassen)',
-    
+    'configuration.fieldType.multiEntryDate': language === 'en' ? 'Multi-Entry (Date)' : 'Multi-Entry (Datum)',
+    'configuration.fieldType.multiEntryDateDesc': language === 'en' ? 'Multiple date + remark entries (e.g. appointments)' : 'Mehrere Datum + Bemerkung Einträge (z.B. Termine)',
+
     // Field Options Configuration
     'configuration.fieldOptions.title': language === 'en' ? 'Selection Options' : 'Auswahloptionen',
     'configuration.fieldOptions.value': language === 'en' ? 'Value' : 'Wert',
@@ -169,6 +171,16 @@ const getTranslations = (orgType, language) => {
     'customField.multiEntry.currentEntries': language === 'en' ? 'Current Entries:' : 'Aktuelle Einträge:',
     'customField.multiEntry.addButtonText': language === 'en' ? 'Add further entry' : 'Weiteren Eintrag hinzufügen',
     
+    // Multi-Entry Date Configuration
+    'configuration.multiEntryDate.title': language === 'en' ? 'Multi-Entry Date Configuration' : 'Multi-Entry Datum Konfiguration',
+    'configuration.multiEntryDate.remarkLabel': language === 'en' ? 'Remark Field Label' : 'Bemerkungsfeld Label',
+    'configuration.multiEntryDate.remarkLabelPlaceholder': language === 'en' ? 'e.g. Remark/Details' : 'z.B. Bemerkung/Details',
+    'configuration.multiEntryDate.remarkPlaceholder': language === 'en' ? 'Remark Placeholder' : 'Bemerkungsfeld Platzhalter',
+    'configuration.multiEntryDate.remarkPlaceholderExample': language === 'en' ? 'e.g. Additional information...' : 'z.B. Zusätzliche Informationen...',
+    'configuration.multiEntryDate.addButtonText': language === 'en' ? 'Add Button Text' : 'Button Text',
+    'configuration.multiEntryDate.addButtonExample': language === 'en' ? 'e.g. Add Date, Add Appointment' : 'z.B. Datum hinzufügen, Termin hinzufügen',
+
+
     // Custom Field Types in Lists
     'customField.selected': language === 'en' ? 'Selected:' : 'Ausgewählt:',
     'customField.pleaseSelect': language === 'en' ? 'Please select...' : 'Bitte wählen...',
@@ -272,6 +284,9 @@ const getTranslations = (orgType, language) => {
     'validation.customField.multiEntryInvalid': language === 'en' ? 'Invalid selection' : 'Ungültige Auswahl',
     'validation.customField.invalidField': language === 'en' ? 'Invalid Field' : 'Ungültiges Field',
     'validation.customField.unknownFieldType': language === 'en' ? 'Unknown field type' : 'Unbekannter Feldtyp',
+    'validation.customField.multiEntryDateRequired': language === 'en' ? 'requires at least one valid date' : 'benötigt mindestens ein gültiges Datum',
+    'validation.customField.multiEntryDateInvalid': language === 'en' ? 'Invalid date' : 'Ungültiges Datum',
+
 
     // Enhanced Configuration Info (existing + new)
     'configuration.info.title': language === 'en' ? 'Configuration Notes' : 'Hinweise zur Konfiguration',
