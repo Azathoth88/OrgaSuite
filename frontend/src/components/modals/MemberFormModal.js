@@ -1,4 +1,4 @@
-// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix
+// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix + Kündigungsgründen + Beitrittsquellen
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
@@ -12,14 +12,17 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const { t, organization } = useOrgTranslation();
   const isEditMode = !!member;
   
-  // State for configured member statuses and custom fields
+  // ✅ ERWEITERTE State für alle Konfigurationsdaten
   const [memberStatuses, setMemberStatuses] = useState([]);
-  const [defaultCurrency, setDefaultCurrency] = useState('EUR'); // ✅ NEU: Separater State für Currency
+  const [defaultCurrency, setDefaultCurrency] = useState('EUR');
   const [customFieldsConfig, setCustomFieldsConfig] = useState({ tabs: [] });
+  const [joiningSources, setJoiningSources] = useState([]);  // ✅ NEU: Beitrittsquellen
+  const [leavingReasons, setLeavingReasons] = useState([]);   // ✅ NEU: Kündigungsgründe
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [loadingCustomFields, setLoadingCustomFields] = useState(true);
+  const [loadingSourcesAndReasons, setLoadingSourcesAndReasons] = useState(false); // ✅ NEU
   
-  // Form States (enhanced with custom fields)
+  // ✅ ERWEITERTE Form States mit neuen Feldern
   const [formData, setFormData] = useState({
     // Persönliche Daten
     salutation: '',
@@ -45,6 +48,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     membershipData: {
       joinDate: new Date().toISOString().split('T')[0],
       membershipStatus: '',
+      joiningSource: '',     // ✅ NEU: Beitrittsquelle
+      leavingReason: '',     // ✅ NEU: Kündigungsgrund
+      leavingDate: '',       // ✅ NEU: Kündigungsdatum
       paymentMethod: 'Überweisung',
       bankDetails: {
         accountHolder: '',
@@ -53,7 +59,6 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         bankName: '',
         sepaActive: false
       },
-      // ✅ NEW: Custom Fields Data
       customFields: {}
     }
   });
@@ -73,30 +78,17 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     formatted: ibanFormatted
   } = useIBANValidation(formData.membershipData?.bankDetails?.iban || '');
 
-  // ✅ NEW: Load Custom Fields Configuration
+  // ✅ Custom Fields Configuration laden
   useEffect(() => {
     const fetchCustomFields = async () => {
       try {
         setLoadingCustomFields(true);
-        
-        // FIXED: Hauptkonfiguration laden (funktioniert definitiv)
-        const response = await axios.get(`http://localhost:5000/api/organization/config`);
+        const response = await axios.get(`${API_URL}/organization/config`);
         
         console.log('✅ Config Response:', response.data);
         
-        // Custom Fields aus der Hauptkonfiguration extrahieren:
         const customFields = response.data.config?.membershipConfig?.customFields || { tabs: [] };
-        
-        console.log('✅ Extracted Custom Fields:', customFields);
-        
         setCustomFieldsConfig(customFields);
-        
-        // Debug: Multi-Entry Felder finden
-        const multiEntryFields = customFields.tabs
-          ?.flatMap(tab => tab.fields || [])
-          ?.filter(field => field.type === 'multi-entry');
-          
-        console.log('✅ Multi-Entry Fields:', multiEntryFields);
         
       } catch (error) {
         console.error('❌ Error fetching config:', error);
@@ -111,27 +103,34 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     }
   }, [isOpen]);
 
-  // ✅ KORRIGIERT: Load configured member statuses + defaultCurrency
+  // ✅ ERWEITERT: Alle Konfigurationsdaten laden (Statuses + Sources + Reasons + Currency)
   useEffect(() => {
-    const fetchMemberStatuses = async () => {
+    const fetchConfigData = async () => {
       try {
         setLoadingStatuses(true);
+        setLoadingSourcesAndReasons(true);
         
-        // ✅ Hauptkonfiguration laden statt nur member-statuses
+        // Hauptkonfiguration laden
         const response = await axios.get(`${API_URL}/organization/config`);
         const config = response.data.config;
         
-        // ✅ Status und Currency getrennt extrahieren
+        // Alle Konfigurationsdaten extrahieren
         const statuses = config.membershipConfig?.statuses || [];
         const currency = config.membershipConfig?.defaultCurrency || 'EUR';
+        const sources = config.membershipConfig?.joiningSources || [];  // ✅ NEU
+        const reasons = config.membershipConfig?.leavingReasons || [];   // ✅ NEU
         
         setMemberStatuses(statuses);
-        setDefaultCurrency(currency); // ✅ Currency separat setzen
+        setDefaultCurrency(currency);
+        setJoiningSources(sources);   // ✅ NEU
+        setLeavingReasons(reasons);   // ✅ NEU
         
         console.log('✅ Loaded statuses:', statuses);
+        console.log('✅ Loaded sources:', sources);
+        console.log('✅ Loaded reasons:', reasons);
         console.log('✅ Default currency:', currency);
         
-        // ✅ Default status setzen wenn nötig
+        // Default status setzen wenn nötig
         if (!formData.membershipData.membershipStatus && statuses.length > 0) {
           const defaultStatus = statuses.find(s => s.isDefault) || statuses[0];
           setFormData(prev => ({
@@ -143,16 +142,19 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           }));
         }
       } catch (error) {
-        console.error('❌ Error fetching member statuses:', error);
+        console.error('❌ Error fetching config:', error);
         setMemberStatuses([]);
-        setDefaultCurrency('EUR'); // ✅ Fallback für Currency
+        setJoiningSources([]);  // ✅ NEU
+        setLeavingReasons([]);  // ✅ NEU
+        setDefaultCurrency('EUR');
       } finally {
         setLoadingStatuses(false);
+        setLoadingSourcesAndReasons(false); // ✅ NEU
       }
     };
 
     if (isOpen) {
-      fetchMemberStatuses();
+      fetchConfigData();
     }
   }, [isOpen]);
 
@@ -162,6 +164,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       const membershipData = member.membershipData || {
         joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
         membershipStatus: member.status || '',
+        joiningSource: member.membershipData?.joiningSource || '',  // ✅ NEU
+        leavingReason: member.membershipData?.leavingReason || '',   // ✅ NEU
+        leavingDate: member.membershipData?.leavingDate || '',       // ✅ NEU
         paymentMethod: 'Überweisung',
         bankDetails: {
           accountHolder: '',
@@ -170,7 +175,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           bankName: '',
           sepaActive: false
         },
-        customFields: {} // Initialize custom fields
+        customFields: {}
       };
 
       if (!membershipData.bankDetails) {
@@ -183,7 +188,6 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         };
       }
 
-      // ✅ NEW: Load existing custom fields data
       if (!membershipData.customFields) {
         membershipData.customFields = {};
       }
@@ -243,6 +247,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           membershipData: {
             joinDate: new Date().toISOString().split('T')[0],
             membershipStatus: defaultStatus?.key || '',
+            joiningSource: '',     // ✅ NEU
+            leavingReason: '',     // ✅ NEU
+            leavingDate: '',       // ✅ NEU
             paymentMethod: 'Überweisung',
             bankDetails: {
               accountHolder: '',
@@ -251,19 +258,19 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               bankName: '',
               sepaActive: false
             },
-            customFields: {} // Reset custom fields
+            customFields: {}
           }
         });
         setError(null);
         setFieldErrors({});
         handleIbanChange('');
         setActiveTab('personal');
-        setDefaultCurrency('EUR'); // ✅ NEU: Currency zurücksetzen
+        setDefaultCurrency('EUR');
       }, 300);
     }
   }, [isOpen, memberStatuses]);
 
-  // ✅ NEW: Custom Fields Handlers
+  // ✅ Custom Fields Handlers
   const updateCustomFieldValue = (tabKey, fieldKey, value) => {
     setFormData(prev => ({
       ...prev,
@@ -284,32 +291,40 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     return formData.membershipData?.customFields?.[tabKey]?.[fieldKey];
   };
 
-  // Enhanced form validation with custom fields
+  // ✅ ERWEITERTE Validierung mit neuen Feldern + Custom Fields
   const validateForm = () => {
     const errors = {};
     
-    // Basic validation (existing)
+    // Pflichtfelder
     if (!formData.firstName.trim()) {
       errors.firstName = t('validation.required', 'Pflichtfeld');
     }
-    
     if (!formData.lastName.trim()) {
       errors.lastName = t('validation.required', 'Pflichtfeld');
     }
     
+    // E-Mail & Website Validierung
     if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = t('validation.invalidEmail', 'Ungültige E-Mail-Adresse');
     }
-    
     if (formData.website.trim() && !/^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/.test(formData.website)) {
       errors.website = t('validation.invalidUrl', 'Ungültige URL');
     }
     
+    // IBAN Validierung
     if (iban && !isIbanValid) {
       errors.iban = ibanError || t('validation.invalidIban', 'Ungültige IBAN');
     }
     
-    // ✅ NEW: Custom Fields Validation
+    // ✅ NEU: Validierung für Kündigungsdatum
+    if (formData.membershipData.leavingReason) {
+      const selectedReason = leavingReasons.find(r => r.key === formData.membershipData.leavingReason);
+      if (selectedReason?.requiresDate && !formData.membershipData.leavingDate) {
+        errors.leavingDate = t('validation.leavingDateRequired', 'Kündigungsdatum ist für diesen Grund erforderlich');
+      }
+    }
+    
+    // ✅ Custom Fields Validierung
     customFieldsConfig.tabs?.forEach(tab => {
       if (tab.active !== false) {
         tab.fields?.forEach(field => {
@@ -449,7 +464,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const age = calculateAge(formData.birthDate);
   const selectedStatus = memberStatuses.find(s => s.key === formData.membershipData.membershipStatus);
 
-  // ✅ NEW: Enhanced tab system with custom tabs
+  // ✅ Enhanced tab system with custom tabs
   const baseTabs = [
     {
       id: 'personal',
@@ -513,7 +528,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           </div>
         </div>
 
-        {/* Enhanced Tab Navigation */}
+        {/* ✅ Enhanced Tab Navigation mit Error Indicators */}
         <div className="bg-gray-100 px-6 py-2 border-b border-gray-200">
           <nav className="flex space-x-4 overflow-x-auto">
             {allTabs.map((tab) => (
@@ -528,14 +543,16 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               >
                 <span className="mr-2">{tab.icon}</span>
                 {tab.label}
-                {/* Show error indicator for tabs with errors */}
+                {/* ✅ Error Indicator für Tabs */}
                 {Object.keys(fieldErrors).some(key => 
-                  tab.customTab ? key.startsWith(`customField_${tab.customTab.key}_`) : 
-                  (tab.id === 'contact' && ['email', 'website'].includes(key.split('_')[0])) ||
-                  (tab.id === 'personal' && ['firstName', 'lastName', 'memberNumber'].includes(key.split('_')[0])) ||
-                  (tab.id === 'bank' && key === 'iban')
+                  tab.customTab ? 
+                    key.startsWith(`customField_${tab.customTab.key}_`) :
+                    (tab.id === 'personal' && ['firstName', 'lastName', 'memberNumber'].includes(key)) ||
+                    (tab.id === 'contact' && ['email', 'website'].includes(key)) ||
+                    (tab.id === 'membership' && ['leavingDate'].includes(key)) ||
+                    (tab.id === 'bank' && ['iban'].includes(key))
                 ) && (
-                  <span className="ml-2 text-red-500">⚠️</span>
+                  <span className="ml-1 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
             ))}
@@ -554,8 +571,6 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* ===== ALLE ORIGINAL TABS VOLLSTÄNDIG ===== */}
-            
             {/* Personal Tab - VOLLSTÄNDIG */}
             {activeTab === 'personal' && (
               <div className="space-y-4">
@@ -845,7 +860,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* Membership Tab - VOLLSTÄNDIG mit Currency Fix */}
+            {/* ✅ ERWEITERT: Membership Tab mit Beitrittsquellen und Kündigungsgründen */}
             {activeTab === 'membership' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -901,7 +916,6 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                       </select>
                     )}
                     
-                    {/* Show selected status details */}
                     {selectedStatus && (
                       <div className="mt-2 p-3 bg-gray-50 rounded-lg text-sm">
                         {selectedStatus.description && (
@@ -932,7 +946,47 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                     )}
                   </div>
 
-                  <div className="md:col-span-2">
+                  {/* ✅ NEU: Beitrittsquelle */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('members.joiningSource', 'Beitrittsquelle')}
+                      <span className="text-xs text-gray-500 ml-2">({t('common.optional', 'optional')})</span>
+                    </label>
+                    {loadingSourcesAndReasons ? (
+                      <div className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50">
+                        <span className="text-gray-500">{t('common.loading', 'Lädt...')}</span>
+                      </div>
+                    ) : (
+                      <select
+                        value={formData.membershipData.joiningSource || ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          membershipData: {
+                            ...formData.membershipData,
+                            joiningSource: e.target.value
+                          }
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        disabled={loading || joiningSources.length === 0}
+                      >
+                        <option value="">{t('members.joiningSource.pleaseSelect', 'Bitte wählen...')}</option>
+                        {joiningSources
+                          .filter(source => source.active !== false)
+                          .map(source => (
+                            <option key={source.key} value={source.key}>
+                              {source.label}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {joiningSources.length === 0 && !loadingSourcesAndReasons && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {t('configuration.joiningSources.noneConfigured', 'Keine Beitrittsquellen konfiguriert')}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('members.paymentMethod', 'Zahlungsweise')}
                     </label>
@@ -953,6 +1007,82 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                       <option value="Bar">Bar</option>
                     </select>
                   </div>
+
+                  {/* ✅ NEU: Kündigungsgrund (nur bei inaktiven Mitgliedern) */}
+                  {leavingReasons.length > 0 && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('members.leavingReason', 'Kündigungsgrund')}
+                          <span className="text-xs text-gray-500 ml-2">({t('common.optional', 'optional')})</span>
+                        </label>
+                        {loadingSourcesAndReasons ? (
+                          <div className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50">
+                            <span className="text-gray-500">{t('common.loading', 'Lädt...')}</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={formData.membershipData.leavingReason || ''}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              membershipData: {
+                                ...formData.membershipData,
+                                leavingReason: e.target.value,
+                                leavingDate: e.target.value ? formData.membershipData.leavingDate : ''
+                              }
+                            })}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            disabled={loading || leavingReasons.length === 0}
+                          >
+                            <option value="">{t('members.leavingReason.pleaseSelect', 'Bitte wählen...')}</option>
+                            {leavingReasons
+                              .filter(reason => reason.active !== false)
+                              .map(reason => (
+                                <option key={reason.key} value={reason.key}>
+                                  {reason.label}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        {leavingReasons.length === 0 && !loadingSourcesAndReasons && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            {t('configuration.leavingReasons.noneConfigured', 'Keine Kündigungsgründe konfiguriert')}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* ✅ NEU: Kündigungsdatum (wenn Kündigungsgrund ausgewählt) */}
+                      {formData.membershipData.leavingReason && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('members.leavingDate', 'Kündigungsdatum')}
+                            {(() => {
+                              const selectedReason = leavingReasons.find(r => r.key === formData.membershipData.leavingReason);
+                              return selectedReason?.requiresDate ? <span className="text-red-500 ml-1">*</span> : null;
+                            })()}
+                          </label>
+                          <input
+                            type="date"
+                            value={formData.membershipData.leavingDate || ''}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              membershipData: {
+                                ...formData.membershipData,
+                                leavingDate: e.target.value
+                              }
+                            })}
+                            className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                              fieldErrors.leavingDate ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                            }`}
+                            disabled={loading}
+                          />
+                          {fieldErrors.leavingDate && (
+                            <p className="mt-1 text-sm text-red-600">{fieldErrors.leavingDate}</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1109,7 +1239,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
               </div>
             )}
 
-            {/* ✅ NEW: Custom Tabs Rendering */}
+            {/* ✅ Custom Tabs Rendering */}
             {activeTab.startsWith('custom_') && (() => {
               const tabKey = activeTab.replace('custom_', '');
               const customTab = customFieldsConfig.tabs?.find(tab => tab.key === tabKey);
@@ -1178,17 +1308,17 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           </form>
         </div>
 
-        {/* Modal Footer */}
+        {/* ✅ Enhanced Modal Footer */}
         <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
           <div className="flex justify-between items-center">
             {/* Tab indicator */}
             <div className="text-sm text-gray-500">
               {allTabs.length > 5 && (
                 <span>
-                  {allTabs.findIndex(tab => tab.id === activeTab) + 1} von {allTabs.length} Tabs
+                  {allTabs.findIndex(tab => tab.id === activeTab) + 1} {t('members.customFields.tabIndicator', 'von')} {allTabs.length} {t('members.customFields.tabs', 'Tabs')}
                   {Object.keys(fieldErrors).length > 0 && (
                     <span className="text-red-500 ml-2">
-                      • {Object.keys(fieldErrors).length} Fehler
+                      • {Object.keys(fieldErrors).length} {t('members.customFields.errors', 'Fehler')}
                     </span>
                   )}
                 </span>

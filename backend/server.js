@@ -1,4 +1,4 @@
-// backend/server.js - Refactored Main Server
+// backend/server.js - Erweitert um Bank-Funktionalität
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -12,6 +12,9 @@ const organizationModule = require('./src/organization/organization');
 const membersModule = require('./src/members/members');
 const configurationModule = require('./src/configuration/configuration');
 const dashboardModule = require('./src/dashboard/dashboard');
+
+// ✅ NEU: Bank-Routen hinzufügen
+const bankRoutes = require('./src/routes/banks');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -60,7 +63,8 @@ app.get('/api/health', async (req, res) => {
           iLike: !!Op?.iLike,
           gte: !!Op?.gte,
           in: !!Op?.in
-        }
+        },
+        bankAPI: true // ✅ NEU: Bank-API verfügbar
       }
     });
   } catch (error) {
@@ -128,6 +132,67 @@ app.get('/api/debug/db-status', async (req, res) => {
     });
   }
 });
+
+// ✅ NEU: Bank-Import beim Server-Start
+async function initializeBankData() {
+  try {
+    console.log('🏦 [STARTUP] Checking for Bundesbank data...');
+    
+    const fs = require('fs');
+    const path = require('path');
+    const csvPath = path.join(__dirname, 'data/bundesbank/bundesbank.csv');
+    
+    if (!fs.existsSync(csvPath)) {
+      console.log('⚠️  [STARTUP] No Bundesbank CSV file found - skipping bank data import');
+      console.log(`    Expected at: ${csvPath}`);
+      return;
+    }
+    
+    console.log('📁 [STARTUP] Bundesbank CSV found, starting import...');
+    
+    // Teste Datenbankverbindung
+    if (!models.sequelize) {
+      console.error('❌ [STARTUP] Sequelize not initialized - skipping bank import');
+      return;
+    }
+    
+    // Teste Verbindung mit Retry-Logik
+    let dbConnected = false;
+    const maxRetries = 10;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        await models.sequelize.authenticate();
+        dbConnected = true;
+        console.log('✅ [STARTUP] Database connection established');
+        break;
+      } catch (error) {
+        console.log(`⏳ [STARTUP] Waiting for database... (${i + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+    
+    if (!dbConnected) {
+      console.error('❌ [STARTUP] Could not connect to database - skipping bank import');
+      return;
+    }
+    
+    // Import starten
+    const { importBundesbankData } = require('./data/bundesbank/import-banks');
+    
+    try {
+      const result = await importBundesbankData();
+      console.log('✅ [STARTUP] Bank data import completed successfully');
+      console.log(`📊 [STARTUP] Imported ${result.imported} bank records`);
+    } catch (error) {
+      console.error('❌ [STARTUP] Bank import failed:', error.message);
+      console.log('🚀 [STARTUP] Server will continue without bank data');
+    }
+    
+  } catch (error) {
+    console.error('💥 [STARTUP] Error during bank data initialization:', error);
+  }
+}
 
 // Dev-Endpoints
 if (process.env.NODE_ENV === 'development') {
@@ -199,79 +264,99 @@ async function startServer() {
 
     // ✅ Routen NACH der Modell-Initialisierung und VOR app.listen() registrieren
     // WICHTIGE REIHENFOLGE: Spezifischere Routen zuerst!
-    app.use('/api/dashboard', dashboardModule.setupRoutes(models));
-    app.use('/api/members', membersModule.setupRoutes(models));
     
-    // Organization routes (includes /setup-demo)
-    app.use('/api/organization', organizationModule.setupRoutes(models));
-    
-    // NACH organization muss config kommen (wegen /api/organization/config)
-    app.use('/api/organization/config', configurationModule.setupRoutes(models));
+    // Organization Routes
+    app.use('/api/organizations', organizationModule.createOrganizationRoutes(models));
+    console.log('✅ Organization routes registered');
 
-    console.log('✅ Routes registered successfully');
+    // Member Routes
+    app.use('/api/members', membersModule.createMembersRoutes(models));
+    console.log('✅ Member routes registered');
 
-    // 404 handler - MUSS nach allen Routen kommen
+    // Configuration Routes
+    app.use('/api/configuration', configurationModule.createConfigurationRoutes(models));
+    console.log('✅ Configuration routes registered');
+
+    // Dashboard Routes
+    app.use('/api/dashboard', dashboardModule.createDashboardRoutes(models));
+    console.log('✅ Dashboard routes registered');
+
+    // ✅ NEU: Bank-Routen registrieren
+    app.use('/api/banks', bankRoutes);
+    console.log('✅ Bank routes registered');
+
+    // ✅ Bank-API-Dokumentation
+    app.get('/api/docs/banks', (req, res) => {
+      res.json({
+        title: 'Bank API Documentation',
+        endpoints: {
+          'GET /api/banks/lookup-iban/:iban': 'Bankdaten anhand IBAN ermitteln',
+          'GET /api/banks/lookup-blz/:blz': 'Bankdaten anhand Bankleitzahl ermitteln',
+          'GET /api/banks/lookup-bic/:bic': 'Bankdaten anhand BIC ermitteln',
+          'GET /api/banks/search?q=term': 'Banken suchen (Autocomplete)',
+          'GET /api/banks/status': 'Status der Bankdatenbank',
+          'POST /api/banks/batch-lookup': 'Mehrere IBANs gleichzeitig prüfen'
+        },
+        examples: {
+          iban_lookup: '/api/banks/lookup-iban/DE89370400440532013000',
+          bank_search: '/api/banks/search?q=Deutsche&limit=5',
+          status: '/api/banks/status'
+        }
+      });
+    });
+
+    // 404 Handler für alle anderen Routen
     app.use('*', (req, res) => {
       res.status(404).json({
-        error: 'Route not found',
+        error: 'Endpoint not found',
         path: req.originalUrl,
-        method: req.method,
-        timestamp: new Date().toISOString()
+        availableEndpoints: [
+          '/api/health',
+          '/api/organizations',
+          '/api/members', 
+          '/api/configuration',
+          '/api/dashboard',
+          '/api/banks', // ✅ NEU
+          '/api/docs/banks' // ✅ NEU
+        ]
       });
     });
 
-    // Global error handler
-    app.use((err, req, res, next) => {
-      logError('GLOBAL_ERROR', err);
-
+    // Globaler Error Handler
+    app.use((error, req, res, next) => {
+      logError('SERVER_ERROR', error);
       res.status(500).json({
-        error: 'Internal server error',
-        message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong!',
+        error: 'Internal Server Error',
+        message: error.message,
         timestamp: new Date().toISOString()
       });
     });
 
-    // Starte Server
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('');
-      console.log('✅ OrgaSuite Backend Server Started Successfully');
+    // ✅ Server starten
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Server running on port ${PORT}`);
+      console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📚 Bank API docs: http://localhost:${PORT}/api/docs/banks`);
       console.log('🏢 ====================================');
-      console.log(`📡 Server running on port ${PORT}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-      console.log(`📊 API Base URL: http://localhost:${PORT}/api`);
-      console.log(`🐛 DB Status: http://localhost:${PORT}/api/debug/db-status`);
-      console.log('');
-      console.log('📍 Available routes:');
-      console.log('   - GET  /api/health');
-      console.log('   - GET  /api/organization');
-      console.log('   - POST /api/organization');
-      console.log('   - POST /api/organization/setup-demo');
-      console.log('   - GET  /api/members');
-      console.log('   - GET  /api/dashboard/stats');
-      console.log('   - GET  /api/organization/config');
-      console.log('');
+      
+      // ✅ Bank-Import nach 3 Sekunden starten (Server muss laufen)
+      setTimeout(initializeBankData, 3000);
     });
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      console.log('SIGTERM received, shutting down gracefully...');
+      server.close(() => {
+        console.log('Process terminated');
+        process.exit(0);
+      });
+    });
+
   } catch (error) {
-    console.error('❌ Failed to initialize server:', error);
+    logError('SERVER_STARTUP', error);
     process.exit(1);
   }
 }
 
-// Signal handling
-process.on('SIGTERM', async () => {
-  console.log('🔄 SIGTERM received, shutting down gracefully...');
-  if (models.sequelize) await models.sequelize.close();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('🔄 SIGINT received, shutting down gracefully...');
-  if (models.sequelize) await models.sequelize.close();
-  process.exit(0);
-});
-
-// Start server
-startServer().catch(error => {
-  logError('SERVER_START', error);
-  process.exit(1);
-});
+// Server starten
+startServer();
