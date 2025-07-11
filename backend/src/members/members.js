@@ -613,7 +613,8 @@ function setupRoutes(models) {
         passwordHash: 'temp_password',
         organizationId: organization.id,
         status,
-        membershipData: validatedMembershipData
+        membershipData: validatedMembershipData,
+        joinedAt: membershipData?.joinDate || new Date()
       });
       
       const createdMember = await Member.findByPk(member.id, {
@@ -724,7 +725,7 @@ function setupRoutes(models) {
         };
       }
       
-      await member.update({
+      const updateFields = {
         salutation,
         title,
         firstName,
@@ -739,8 +740,17 @@ function setupRoutes(models) {
         memberNumber,
         status,
         membershipData: validatedMembershipData
-      });
-      
+      };
+
+      // NEU: Wenn joinDate vorhanden ist, auch joinedAt aktualisieren
+      if (membershipData?.joinDate) {
+        updateFields.joinedAt = membershipData.joinDate;
+      }
+
+      // Update durchführen mit dem erweiterten Objekt
+      await member.update(updateFields);
+
+      // Rest bleibt unverändert
       const updatedMember = await Member.findByPk(member.id, {
         include: [{ 
           model: Organization,
