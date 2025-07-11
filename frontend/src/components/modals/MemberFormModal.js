@@ -1,4 +1,4 @@
-// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix + Kündigungsgründen + Beitrittsquellen + BIC-Lookup
+// frontend/src/components/modals/MemberFormModal.js - VOLLSTÄNDIGE VERSION mit Currency Fix + Kündigungsgründen + Beitrittsquellen + BIC-Lookup + GRUPPEN
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
@@ -6,6 +6,18 @@ import { useIBANValidation, formatIBAN } from '../../utils/ibanUtils';
 import { CustomFieldRenderer, validateCustomField } from '../fields/CustomFieldComponents';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+// ✅ Color Options für Gruppen
+const colorOptions = [
+  { value: 'gray', class: 'bg-gray-100 text-gray-800' },
+  { value: 'blue', class: 'bg-blue-100 text-blue-800' },
+  { value: 'green', class: 'bg-green-100 text-green-800' },
+  { value: 'yellow', class: 'bg-yellow-100 text-yellow-800' },
+  { value: 'red', class: 'bg-red-100 text-red-800' },
+  { value: 'purple', class: 'bg-purple-100 text-purple-800' },
+  { value: 'pink', class: 'bg-pink-100 text-pink-800' },
+  { value: 'indigo', class: 'bg-indigo-100 text-indigo-800' }
+];
 
 const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const { t, organization } = useOrgTranslation();
@@ -15,13 +27,13 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const [memberStatuses, setMemberStatuses] = useState([]);
   const [defaultCurrency, setDefaultCurrency] = useState('EUR');
   const [customFieldsConfig, setCustomFieldsConfig] = useState({ tabs: [] });
-  const [joiningSources, setJoiningSources] = useState([]);  // ✅ NEU: Beitrittsquellen
-  const [leavingReasons, setLeavingReasons] = useState([]);   // ✅ NEU: Kündigungsgründe
+  const [joiningSources, setJoiningSources] = useState([]);
+  const [leavingReasons, setLeavingReasons] = useState([]);
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [loadingCustomFields, setLoadingCustomFields] = useState(true);
-  const [loadingSourcesAndReasons, setLoadingSourcesAndReasons] = useState(false); // ✅ NEU
+  const [loadingSourcesAndReasons, setLoadingSourcesAndReasons] = useState(false);
   
-  // ✅ ERWEITERTE Form States mit neuen Feldern
+  // ✅ ERWEITERTE Form States mit neuen Feldern und GRUPPEN
   const [formData, setFormData] = useState({
     // Persönliche Daten
     salutation: '',
@@ -44,12 +56,14 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       zip: '',
       country: 'Deutschland'
     },
+    // ✅ NEU: Gruppen
+    groups: [],
     membershipData: {
       joinDate: new Date().toISOString().split('T')[0],
       membershipStatus: '',
-      joiningSource: '',     // ✅ NEU: Beitrittsquelle
-      leavingReason: '',     // ✅ NEU: Kündigungsgrund
-      leavingDate: '',       // ✅ NEU: Kündigungsdatum
+      joiningSource: '',
+      leavingReason: '',
+      leavingDate: '',
       paymentMethod: 'Überweisung',
       bankDetails: {
         accountHolder: '',
@@ -140,7 +154,8 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
             sources: sources.length,
             reasons: reasons.length,
             currency,
-            customFieldTabs: customFields.tabs?.length || 0
+            customFieldTabs: customFields.tabs?.length || 0,
+            groups: membershipConfig.groups?.length || 0
           });
           
           // Default status setzen
@@ -192,9 +207,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       const membershipData = member.membershipData || {
         joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
         membershipStatus: member.status || '',
-        joiningSource: member.membershipData?.joiningSource || '',  // ✅ NEU
-        leavingReason: member.membershipData?.leavingReason || '',   // ✅ NEU
-        leavingDate: member.membershipData?.leavingDate || '',       // ✅ NEU
+        joiningSource: member.membershipData?.joiningSource || '',
+        leavingReason: member.membershipData?.leavingReason || '',
+        leavingDate: member.membershipData?.leavingDate || '',
         paymentMethod: 'Überweisung',
         bankDetails: {
           accountHolder: '',
@@ -239,6 +254,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
           zip: '',
           country: 'Deutschland'
         },
+        groups: member.groups || [], // ✅ NEU: Gruppen laden
         membershipData: membershipData
       });
       
@@ -272,12 +288,13 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
             zip: '',
             country: 'Deutschland'
           },
+          groups: [], // ✅ NEU: Gruppen zurücksetzen
           membershipData: {
             joinDate: new Date().toISOString().split('T')[0],
             membershipStatus: defaultStatus?.key || '',
-            joiningSource: '',     // ✅ NEU
-            leavingReason: '',     // ✅ NEU
-            leavingDate: '',       // ✅ NEU
+            joiningSource: '',
+            leavingReason: '',
+            leavingDate: '',
             paymentMethod: 'Überweisung',
             bankDetails: {
               accountHolder: '',
@@ -406,6 +423,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         status: formData.membershipData.membershipStatus || 'active',
         memberNumber: formData.memberNumber || undefined,
         address: formData.address,
+        groups: formData.groups || [], // ✅ NEU: Gruppen mitsenden
         membershipData: {
           ...formData.membershipData,
           bankDetails: (iban || formData.membershipData.bankDetails.accountHolder || 
@@ -420,7 +438,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
         }
       };
       
-      console.log('📤 Submitting member data with custom fields:', submitData);
+      console.log('📤 Submitting member data with custom fields and groups:', submitData);
       
       const response = isEditMode
         ? await axios.put(`${API_URL}/members/${member.id}`, submitData)
@@ -492,7 +510,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   const age = calculateAge(formData.birthDate);
   const selectedStatus = memberStatuses.find(s => s.key === formData.membershipData.membershipStatus);
 
-  // ✅ Enhanced tab system with custom tabs
+  // ✅ Enhanced tab system with custom tabs and groups
   const baseTabs = [
     {
       id: 'personal',
@@ -512,6 +530,11 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     {
       id: 'membership',
       label: t('members.tabs.membership', 'Mitgliedschaft'),
+      icon: '👥'
+    },
+    {
+      id: 'groups',
+      label: t('members.tabs.groups', 'Gruppen'),
       icon: '👥'
     },
     {
@@ -1112,6 +1135,122 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
                     </>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* ✅ NEU: Groups Tab */}
+            {activeTab === 'groups' && (
+              <div className="space-y-6">
+                <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold text-blue-800 mb-2">
+                    {t('members.groups.info', 'Gruppenzuordnung')}
+                  </h4>
+                  <p className="text-sm text-blue-700">
+                    {t('members.groups.infoText', 'Weisen Sie dem Mitglied eine oder mehrere Gruppen zu.')}
+                  </p>
+                </div>
+                
+                {/* Gruppenliste */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    {t('members.groups.available', 'Verfügbare Gruppen')}
+                  </label>
+                  
+                  {organization?.settings?.membershipConfig?.groups?.filter(g => g.active !== false).length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {organization.settings.membershipConfig.groups
+                        .filter(group => group.active !== false)
+                        .map(group => {
+                          const isSelected = formData.groups?.includes(group.key);
+                          const colorClass = colorOptions.find(c => c.value === group.color)?.class || 'bg-gray-100 text-gray-800';
+                          
+                          return (
+                            <div
+                              key={group.key}
+                              className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+                                isSelected 
+                                  ? 'border-blue-500 bg-blue-50' 
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                              onClick={() => {
+                                if (organization.settings?.membershipConfig?.groupSettings?.allowMultiple !== false) {
+                                  // Mehrfachauswahl erlaubt
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    groups: isSelected
+                                      ? (prev.groups || []).filter(g => g !== group.key)
+                                      : [...(prev.groups || []), group.key]
+                                  }));
+                                } else {
+                                  // Nur Einzelauswahl erlaubt
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    groups: isSelected ? [] : [group.key]
+                                  }));
+                                }
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                  <span className={`inline-flex items-center justify-center px-3 py-2 rounded-full text-lg ${colorClass}`}>
+                                    {group.icon || '👥'}
+                                  </span>
+                                  <div>
+                                    <h4 className="font-medium text-gray-900">
+                                      {group.label}
+                                    </h4>
+                                    {group.description && (
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        {group.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <span className="text-blue-600 text-2xl">✓</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg">
+                      <p className="text-gray-500">
+                        {t('members.groups.noGroupsDefined', 'Keine Gruppen definiert.')}
+                      </p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {t('members.groups.defineInConfig', 'Definieren Sie Gruppen in der Konfiguration.')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Ausgewählte Gruppen Zusammenfassung */}
+                {formData.groups?.length > 0 && (
+                  <div className="mt-6 bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">
+                      {t('members.groups.selected', 'Ausgewählte Gruppen')}:
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.groups.map(groupKey => {
+                        const group = organization.settings.membershipConfig.groups.find(g => g.key === groupKey);
+                        if (!group) return null;
+                        const colorClass = colorOptions.find(c => c.value === group.color)?.class || 'bg-gray-100 text-gray-800';
+                        
+                        return (
+                          <span
+                            key={groupKey}
+                            className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${colorClass}`}
+                          >
+                            <span className="mr-1">{group.icon || '👥'}</span>
+                            {group.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

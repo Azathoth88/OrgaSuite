@@ -1,4 +1,4 @@
-// frontend/src/components/views/ConfigurationView.js - VOLLSTÄNDIG MIT CUSTOM FIELDS
+// frontend/src/components/views/ConfigurationView.js - VOLLSTÄNDIG MIT CUSTOM FIELDS UND GRUPPEN
 import React, { useState, useContext, useEffect } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
@@ -15,7 +15,7 @@ const ConfigurationView = () => {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('membership');
   
-  // Default Konfiguration MIT CUSTOM FIELDS
+  // Default Konfiguration MIT CUSTOM FIELDS UND GRUPPEN
   const defaultConfig = {
     membershipConfig: {
       statuses: [
@@ -75,6 +75,17 @@ const ConfigurationView = () => {
       // ✅ CUSTOM FIELDS
       customFields: {
         tabs: []
+      },
+      // ✅ GRUPPEN
+      groups: [
+        { key: 'youth', label: 'Jugend', description: 'Jugendmitglieder bis 18 Jahre', color: 'blue', icon: '👦', active: true },
+        { key: 'adults', label: 'Erwachsene', description: 'Erwachsene Mitglieder', color: 'green', icon: '👤', active: true },
+        { key: 'seniors', label: 'Senioren', description: 'Mitglieder über 65 Jahre', color: 'purple', icon: '👴', active: true }
+      ],
+      groupSettings: {
+        allowMultiple: true,
+        requiredOnJoin: false,
+        showInReports: true
       }
     },
     generalConfig: {
@@ -84,7 +95,7 @@ const ConfigurationView = () => {
     }
   };
 
-  // Aktuelle Konfiguration aus Organization Settings laden mit Custom Fields
+  // Aktuelle Konfiguration aus Organization Settings laden mit Custom Fields und Gruppen
   const [config, setConfig] = useState(() => {
     const orgSettings = organization?.settings || {};
     return {
@@ -94,7 +105,9 @@ const ConfigurationView = () => {
         statuses: orgSettings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
         joiningSources: orgSettings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
         leavingReasons: orgSettings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons,
-        customFields: orgSettings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields
+        customFields: orgSettings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields,
+        groups: orgSettings.membershipConfig?.groups || defaultConfig.membershipConfig.groups,
+        groupSettings: orgSettings.membershipConfig?.groupSettings || defaultConfig.membershipConfig.groupSettings
       },
       generalConfig: {
         ...defaultConfig.generalConfig,
@@ -113,7 +126,9 @@ const ConfigurationView = () => {
           statuses: organization.settings.membershipConfig?.statuses || defaultConfig.membershipConfig.statuses,
           joiningSources: organization.settings.membershipConfig?.joiningSources || defaultConfig.membershipConfig.joiningSources,
           leavingReasons: organization.settings.membershipConfig?.leavingReasons || defaultConfig.membershipConfig.leavingReasons,
-          customFields: organization.settings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields
+          customFields: organization.settings.membershipConfig?.customFields || defaultConfig.membershipConfig.customFields,
+          groups: organization.settings.membershipConfig?.groups || defaultConfig.membershipConfig.groups,
+          groupSettings: organization.settings.membershipConfig?.groupSettings || defaultConfig.membershipConfig.groupSettings
         },
         generalConfig: {
           ...defaultConfig.generalConfig,
@@ -259,6 +274,53 @@ const ConfigurationView = () => {
 
   const updateFieldEntryConfig = (tabIndex, fieldIndex, entryConfig) => {
     updateCustomField(tabIndex, fieldIndex, 'entryConfig', entryConfig);
+  };
+
+  // ✅ GRUPPEN MANAGEMENT FUNCTIONS
+  const addMemberGroup = () => {
+    const newGroup = {
+      key: `group_${Date.now()}`,
+      label: '',
+      description: '',
+      color: 'blue',
+      icon: '👥',
+      active: true
+    };
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        groups: [...(prev.membershipConfig?.groups || []), newGroup]
+      }
+    }));
+  };
+
+  const updateMemberGroup = (index, field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        groups: (prev.membershipConfig?.groups || []).map((group, i) => 
+          i === index ? { ...group, [field]: value } : group
+        )
+      }
+    }));
+  };
+
+  const removeMemberGroup = (index) => {
+    if ((config.membershipConfig?.groups || []).length <= 1) {
+      alert(t('configuration.groups.minRequired', 'Mindestens eine Gruppe muss vorhanden sein.'));
+      return;
+    }
+    
+    setConfig(prev => ({
+      ...prev,
+      membershipConfig: {
+        ...prev.membershipConfig,
+        groups: (prev.membershipConfig?.groups || []).filter((_, i) => i !== index)
+      }
+    }));
   };
 
   // ✅ RESET-FUNKTION MIT API-AUFRUF
@@ -506,7 +568,7 @@ const ConfigurationView = () => {
     }));
   };
 
-  // Tab-Definitionen MIT CUSTOM FIELDS
+  // Tab-Definitionen MIT CUSTOM FIELDS UND GRUPPEN
   const tabs = [
     {
       id: 'membership',
@@ -526,6 +588,13 @@ const ConfigurationView = () => {
       name: t('configuration.tabs.customFields', 'Custom Fields'),
       icon: '🔧',
       description: t('configuration.tabs.customFieldsDesc', 'Benutzerdefinierte Felder für Mitgliederdaten')
+    },
+    // ✅ GRUPPEN TAB
+    {
+      id: 'groups',
+      name: t('configuration.tabs.groups', 'Gruppen'),
+      icon: '👥',
+      description: t('configuration.tabs.groupsDesc', 'Mitgliedergruppen verwalten')
     },
     {
       id: 'general',
@@ -553,6 +622,15 @@ const ConfigurationView = () => {
   const iconOptions = [
     '📝', '🐓', '🏠', '📞', '📧', '🏢', '👤', '📊', '🔧', '⚙️', 
     '📋', '📄', '💼', '🎯', '📈', '💰', '🏆', '🎨', '🔍', '📎'
+  ];
+
+  // Icon-Optionen für Gruppen
+  const groupIconOptions = [
+    '👥', '🏢', '🏠', '🎯', '⭐', '🏆', '🎨', '🔧', '💼', '📚',
+    '🚀', '💡', '🌟', '🎭', '🎪', '🎸', '⚽', '🏈', '🎾', '🏐',
+    '🎮', '🎲', '♟️', '🎯', '🏹', '🥇', '🥈', '🥉', '🏅', '🎖️',
+    '🌍', '🌎', '🌏', '🗺️', '🧭', '🏔️', '🏕️', '🏖️', '🏜️', '🏞️',
+    '🐕', '🐈', '🐎', '🐄', '🐖', '🐑', '🐓', '🦆', '🦅', '🦉'
   ];
 
   // Farb-Optionen für Status
@@ -1577,6 +1655,224 @@ const ConfigurationView = () => {
             </div>
           )}
 
+          {/* ✅ GRUPPEN TAB */}
+          {activeTab === 'groups' && (
+            <div className="space-y-6">
+              {/* Gruppen Header */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    {t('configuration.groups.title', 'Mitgliedergruppen verwalten')}
+                  </h2>
+                  <button
+                    onClick={addMemberGroup}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  >
+                    <span>➕</span>
+                    <span>{t('configuration.groups.add', 'Gruppe hinzufügen')}</span>
+                  </button>
+                </div>
+                
+                <p className="text-sm text-gray-600 mb-4">
+                  {t('configuration.groups.description', 'Gruppen ermöglichen die Kategorisierung von Mitgliedern nach Interessen, Abteilungen oder anderen Kriterien.')}
+                </p>
+
+                {/* Gruppen Liste */}
+                <div className="space-y-4">
+                  {(config.membershipConfig?.groups || []).map((group, index) => (
+                    <div key={group.key || index} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                        {/* Icon Auswahl */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.groups.icon', 'Symbol')}
+                          </label>
+                          <select
+                            value={group.icon || '👥'}
+                            onChange={(e) => updateMemberGroup(index, 'icon', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-2xl"
+                          >
+                            {groupIconOptions.map(icon => (
+                              <option key={icon} value={icon}>
+                                {icon}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        {/* Key */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.groups.key', 'Schlüssel')}
+                          </label>
+                          <input
+                            type="text"
+                            value={group.key || ''}
+                            onChange={(e) => updateMemberGroup(index, 'key', e.target.value)}
+                            placeholder={t('configuration.groups.keyPlaceholder', 'z.B. youth')}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        
+                        {/* Label */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.groups.label', 'Bezeichnung')}
+                          </label>
+                          <input
+                            type="text"
+                            value={group.label || ''}
+                            onChange={(e) => updateMemberGroup(index, 'label', e.target.value)}
+                            placeholder={t('configuration.groups.labelPlaceholder', 'z.B. Jugend')}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        
+                        {/* Farbe */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('configuration.groups.color', 'Farbe')}
+                          </label>
+                          <select
+                            value={group.color || 'blue'}
+                            onChange={(e) => updateMemberGroup(index, 'color', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          >
+                            {colorOptions.map(color => (
+                              <option key={color.value} value={color.value}>
+                                {color.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="mt-1">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              colorOptions.find(c => c.value === (group.color || 'blue'))?.class || 'bg-gray-100 text-gray-800'
+                            }`}>
+                              <span className="mr-1">{group.icon || '👥'}</span>
+                              {group.label || 'Gruppe'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Aktiv */}
+                        <div className="flex items-end">
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={group.active !== false}
+                              onChange={(e) => updateMemberGroup(index, 'active', e.target.checked)}
+                              className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {t('configuration.groups.active', 'Aktiv')}
+                            </span>
+                          </label>
+                        </div>
+                        
+                        {/* Entfernen Button */}
+                        <div className="flex items-end justify-end">
+                          <button
+                            onClick={() => removeMemberGroup(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title={t('configuration.groups.remove', 'Gruppe entfernen')}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Beschreibung */}
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('configuration.groups.description', 'Beschreibung')}
+                        </label>
+                        <textarea
+                          value={group.description || ''}
+                          onChange={(e) => updateMemberGroup(index, 'description', e.target.value)}
+                          placeholder={t('configuration.groups.descriptionPlaceholder', 'Beschreibung der Gruppe (optional)')}
+                          rows="2"
+                          className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Zusätzliche Einstellungen */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                  {t('configuration.groups.settings', 'Gruppeneinstellungen')}
+                </h3>
+                
+                <div className="space-y-4">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={config.membershipConfig?.groupSettings?.allowMultiple !== false}
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        membershipConfig: {
+                          ...prev.membershipConfig,
+                          groupSettings: {
+                            ...prev.membershipConfig?.groupSettings,
+                            allowMultiple: e.target.checked
+                          }
+                        }
+                      }))}
+                      className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      {t('configuration.groups.allowMultiple', 'Mitglieder können mehreren Gruppen angehören')}
+                    </span>
+                  </label>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={config.membershipConfig?.groupSettings?.requiredOnJoin === true}
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        membershipConfig: {
+                          ...prev.membershipConfig,
+                          groupSettings: {
+                            ...prev.membershipConfig?.groupSettings,
+                            requiredOnJoin: e.target.checked
+                          }
+                        }
+                      }))}
+                      className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      {t('configuration.groups.requiredOnJoin', 'Gruppenzuweisung beim Beitritt erforderlich')}
+                    </span>
+                  </label>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={config.membershipConfig?.groupSettings?.showInReports === true}
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        membershipConfig: {
+                          ...prev.membershipConfig,
+                          groupSettings: {
+                            ...prev.membershipConfig?.groupSettings,
+                            showInReports: e.target.checked
+                          }
+                        }
+                      }))}
+                      className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      {t('configuration.groups.showInReports', 'Gruppen in Berichten und Statistiken anzeigen')}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ✅ ALLGEMEIN TAB */}
           {activeTab === 'general' && (
             <div className="space-y-8">
@@ -1670,6 +1966,8 @@ const ConfigurationView = () => {
               <li>• Multi-Entry Felder sind perfekt für Zuchtdaten (Rassen + Bemerkungen)</li>
               <li>• <strong>Multi-Entry (Datum) Felder sind ideal für Termine, Impfungen, Ereignisse</strong></li>
               <li>• Alle Custom Field Daten werden in membershipData.customFields gespeichert</li>
+              <li>• <strong>Gruppen ermöglichen die Kategorisierung von Mitgliedern und können für Berichte und Filterungen verwendet werden</strong></li>
+              <li>• Wenn "Gruppenzuweisung beim Beitritt erforderlich" aktiv ist, muss jedes neue Mitglied mindestens einer Gruppe zugewiesen werden</li>
             </ul>
           </div>
         </div>

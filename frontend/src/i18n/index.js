@@ -1,4 +1,4 @@
-// frontend/src/i18n/index.js - VOLLSTÄNDIG ERWEITERT mit Custom Fields und Beitrittsquellen/Kündigungsgründen
+// frontend/src/i18n/index.js - VOLLSTÄNDIG ERWEITERT mit Custom Fields, Beitrittsquellen/Kündigungsgründen und Gruppen
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
@@ -180,7 +180,6 @@ const getTranslations = (orgType, language) => {
     'configuration.multiEntryDate.addButtonText': language === 'en' ? 'Add Button Text' : 'Button Text',
     'configuration.multiEntryDate.addButtonExample': language === 'en' ? 'e.g. Add Date, Add Appointment' : 'z.B. Datum hinzufügen, Termin hinzufügen',
 
-
     // Custom Field Types in Lists
     'customField.selected': language === 'en' ? 'Selected:' : 'Ausgewählt:',
     'customField.pleaseSelect': language === 'en' ? 'Please select...' : 'Bitte wählen...',
@@ -190,9 +189,14 @@ const getTranslations = (orgType, language) => {
     'configuration.tabs.membershipDesc': language === 'en' ? 'Status, fees and billing cycles' : 'Status, Beiträge und Abrechnungszyklen',
     'configuration.tabs.general': language === 'en' ? 'General' : 'Allgemein',
     'configuration.tabs.generalDesc': language === 'en' ? 'Basic settings' : 'Grundeinstellungen',
-    // ✅ NEUER TAB
+    
+    // ✅ NEUER TAB - Sources & Reasons
     'configuration.tabs.sourcesReasons': language === 'en' ? 'Sources & Reasons' : 'Quellen & Gründe',
     'configuration.tabs.sourcesReasonsDesc': language === 'en' ? 'Joining sources and leaving reasons' : 'Beitrittsquellen und Kündigungsgründe',
+    
+    // ✅ NEW TAB - Groups
+    'configuration.tabs.groups': language === 'en' ? 'Groups' : 'Gruppen',
+    'configuration.tabs.groupsDesc': language === 'en' ? 'Manage member groups' : 'Mitgliedergruppen verwalten',
 
     // ✅ NEUE JOINING SOURCES (BEITRITTSQUELLEN)
     'configuration.joiningSources.title': language === 'en' ? 'Manage Joining Sources' : 'Beitrittsquellen verwalten',
@@ -224,6 +228,39 @@ const getTranslations = (orgType, language) => {
     'configuration.leavingReasons.description': language === 'en' ? 'Description' : 'Beschreibung',
     'configuration.leavingReasons.descriptionPlaceholder': language === 'en' ? 'Description of the leaving reason (optional)' : 'Beschreibung des Kündigungsgrunds (optional)',
     'configuration.leavingReasons.minRequired': language === 'en' ? 'At least one leaving reason must exist.' : 'Mindestens ein Kündigungsgrund muss vorhanden sein.',
+
+    // ✅ NEW - Groups Configuration
+    'configuration.groups.title': language === 'en' ? 'Manage Member Groups' : 'Mitgliedergruppen verwalten',
+    'configuration.groups.add': language === 'en' ? 'Add Group' : 'Gruppe hinzufügen',
+    'configuration.groups.description': language === 'en' ? 
+      'Groups allow categorization of members by interests, departments, or other criteria.' : 
+      'Gruppen ermöglichen die Kategorisierung von Mitgliedern nach Interessen, Abteilungen oder anderen Kriterien.',
+    'configuration.groups.icon': language === 'en' ? 'Icon' : 'Symbol',
+    'configuration.groups.key': language === 'en' ? 'Key' : 'Schlüssel',
+    'configuration.groups.keyPlaceholder': language === 'en' ? 'e.g. youth' : 'z.B. youth',
+    'configuration.groups.label': language === 'en' ? 'Label' : 'Bezeichnung',
+    'configuration.groups.labelPlaceholder': language === 'en' ? 'e.g. Youth' : 'z.B. Jugend',
+    'configuration.groups.color': language === 'en' ? 'Color' : 'Farbe',
+    'configuration.groups.active': language === 'en' ? 'Active' : 'Aktiv',
+    'configuration.groups.remove': language === 'en' ? 'Remove group' : 'Gruppe entfernen',
+    'configuration.groups.descriptionPlaceholder': language === 'en' ? 
+      'Description of the group (optional)' : 
+      'Beschreibung der Gruppe (optional)',
+    'configuration.groups.minRequired': language === 'en' ? 
+      'At least one group must exist.' : 
+      'Mindestens eine Gruppe muss vorhanden sein.',
+    
+    // Group Settings
+    'configuration.groups.settings': language === 'en' ? 'Group Settings' : 'Gruppeneinstellungen',
+    'configuration.groups.allowMultiple': language === 'en' ? 
+      'Members can belong to multiple groups' : 
+      'Mitglieder können mehreren Gruppen angehören',
+    'configuration.groups.requiredOnJoin': language === 'en' ? 
+      'Group assignment required when joining' : 
+      'Gruppenzuweisung beim Beitritt erforderlich',
+    'configuration.groups.showInReports': language === 'en' ? 
+      'Show groups in reports and statistics' : 
+      'Gruppen in Berichten und Statistiken anzeigen',
 
     // Color Options (existing + new)
     'configuration.colors.green': language === 'en' ? 'Green' : 'Grün',
@@ -261,13 +298,44 @@ const getTranslations = (orgType, language) => {
     'members.leavingDate': language === 'en' ? 'Leaving Date' : 'Kündigungsdatum',
     'members.leavingDateRequired': language === 'en' ? 'A date is required for this leaving reason' : 'Für diesen Kündigungsgrund ist ein Datum erforderlich',
 
-    // Member Form Tabs (existing)
+    // Member Form Tabs (existing + groups)
     'members.tabs.personal': language === 'en' ? 'Personal' : 'Person',
     'members.tabs.contact': language === 'en' ? 'Contact' : 'Kontakt',
     'members.tabs.address': language === 'en' ? 'Address' : 'Anschrift',
     'members.tabs.membership': language === 'en' ? 'Membership' : 'Mitgliedschaft',
     'members.tabs.bank': language === 'en' ? 'Bank Details' : 'Bankdaten',
+    'members.tabs.groups': language === 'en' ? 'Groups' : 'Gruppen',
     
+    // Member Form - Groups Tab
+    'members.groups.info': language === 'en' ? 'Group Assignment' : 'Gruppenzuordnung',
+    'members.groups.infoText': language === 'en' ? 
+      'Assign the member to one or more groups.' : 
+      'Weisen Sie dem Mitglied eine oder mehrere Gruppen zu.',
+    'members.groups.available': language === 'en' ? 'Available Groups' : 'Verfügbare Gruppen',
+    'members.groups.noGroupsDefined': language === 'en' ? 'No groups defined.' : 'Keine Gruppen definiert.',
+    'members.groups.defineInConfig': language === 'en' ? 
+      'Define groups in the configuration.' : 
+      'Definieren Sie Gruppen in der Konfiguration.',
+    'members.groups.selected': language === 'en' ? 'Selected Groups' : 'Ausgewählte Gruppen',
+    
+    // Members List - Group Filter
+    'members.filter.byGroup': language === 'en' ? 'By Group' : 'Nach Gruppe',
+    'members.filter.allGroups': language === 'en' ? 'All Groups' : 'Alle Gruppen',
+    
+    // Table Headers
+    'members.table.groups': language === 'en' ? 'Groups' : 'Gruppen',
+    
+    // Export/Import
+    'members.export.groups': language === 'en' ? 'Groups' : 'Gruppen',
+    'members.import.groupsHelp': language === 'en' ? 
+      'Comma-separated group keys (e.g. youth,seniors)' : 
+      'Kommagetrennte Gruppenschlüssel (z.B. youth,seniors)',
+    
+    // Statistics
+    'dashboard.stats.byGroup': language === 'en' ? 'Members by Group' : 'Mitglieder nach Gruppe',
+    'dashboard.stats.groupDistribution': language === 'en' ? 'Group Distribution' : 'Gruppenverteilung',
+    'dashboard.stats.noGroupAssigned': language === 'en' ? 'No Group' : 'Keine Gruppe',
+
     // Validation (existing + new)
     'validation.required': language === 'en' ? 'Required field' : 'Pflichtfeld',
     'validation.invalidEmail': language === 'en' ? 'Invalid email address' : 'Ungültige E-Mail-Adresse',
@@ -288,7 +356,6 @@ const getTranslations = (orgType, language) => {
     'validation.customField.unknownFieldType': language === 'en' ? 'Unknown field type' : 'Unbekannter Feldtyp',
     'validation.customField.multiEntryDateRequired': language === 'en' ? 'requires at least one valid date' : 'benötigt mindestens ein gültiges Datum',
     'validation.customField.multiEntryDateInvalid': language === 'en' ? 'Invalid date' : 'Ungültiges Datum',
-
 
     // Enhanced Configuration Info (existing + new)
     'configuration.info.title': language === 'en' ? 'Configuration Notes' : 'Hinweise zur Konfiguration',
@@ -326,6 +393,9 @@ const getTranslations = (orgType, language) => {
     'configuration.info.futureChanges': language === 'en' ?
       'Changes affect all future member forms' :
       'Änderungen wirken sich auf alle zukünftigen Mitgliederformulare aus',
+    'configuration.info.groups': language === 'en' ?
+      'Groups help organize members into categories for better management and reporting' :
+      'Gruppen helfen, Mitglieder in Kategorien zu organisieren für besseres Management und Berichterstattung',
     
     // ✅ SPECIFIC BREEDING/CLUB TRANSLATIONS
     'customField.breeding.species': language === 'en' ? 'Breeding Species' : 'Gezüchtete Rassen',

@@ -1,8 +1,76 @@
-// backend/src/configuration/configuration.js - ERWEITERT um Custom Fields
+// backend/src/configuration/configuration.js - ERWEITERT um Custom Fields und Groups
 const express = require('express');
 
 // Router erstellen
 const router = express.Router();
+
+/**
+ * Validate groups configuration
+ * @param {object} groups - Groups configuration
+ * @returns {object} - Validation result
+ */
+function validateGroups(groups, groupSettings) {
+  const errors = [];
+  
+  if (!groups || !Array.isArray(groups)) {
+    return { isValid: true, errors: [] }; // Groups are optional
+  }
+  
+  groups.forEach((group, index) => {
+    if (!group.key || typeof group.key !== 'string') {
+      errors.push(`Group ${index + 1}: key is required and must be a string`);
+    }
+    
+    // Validate key format
+    if (group.key && !/^[a-z0-9_]+$/.test(group.key)) {
+      errors.push(`Group ${index + 1}: key must contain only lowercase letters, numbers, and underscores`);
+    }
+    
+    if (!group.label || typeof group.label !== 'string') {
+      errors.push(`Group ${index + 1}: label is required and must be a string`);
+    }
+    
+    const validColors = ['green', 'blue', 'yellow', 'red', 'gray', 'purple', 'orange', 'cyan'];
+    if (group.color && !validColors.includes(group.color)) {
+      errors.push(`Group ${index + 1}: color must be one of: ${validColors.join(', ')}`);
+    }
+    
+    if (group.icon && typeof group.icon !== 'string') {
+      errors.push(`Group ${index + 1}: icon must be a string`);
+    }
+    
+    if (group.active !== undefined && typeof group.active !== 'boolean') {
+      errors.push(`Group ${index + 1}: active must be a boolean`);
+    }
+  });
+  
+  // Check for duplicate keys
+  const groupKeys = groups.map(g => g.key);
+  const uniqueGroupKeys = [...new Set(groupKeys)];
+  if (groupKeys.length !== uniqueGroupKeys.length) {
+    errors.push('Group keys must be unique');
+  }
+  
+  // Validate groupSettings if present
+  if (groupSettings) {
+    if (groupSettings.allowMultiple !== undefined && typeof groupSettings.allowMultiple !== 'boolean') {
+      errors.push('groupSettings.allowMultiple must be a boolean');
+    }
+    
+    if (groupSettings.requiredOnJoin !== undefined && typeof groupSettings.requiredOnJoin !== 'boolean') {
+      errors.push('groupSettings.requiredOnJoin must be a boolean');
+    }
+    
+    if (groupSettings.showInReports !== undefined && typeof groupSettings.showInReports !== 'boolean') {
+      errors.push('groupSettings.showInReports must be a boolean');
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
 
 /**
  * Validate custom fields configuration
@@ -41,7 +109,7 @@ function validateCustomFields(customFields) {
         errors.push(`${fieldPath}: label is required and must be a string`);
       }
       
-      const validTypes = ['text', 'textarea', 'checkbox', 'select', 'multiselect', 'multi-entry', 'number', 'date'];
+      const validTypes = ['text', 'textarea', 'checkbox', 'select', 'multiselect', 'multi-entry', 'multi-entry-date', 'number', 'date'];
       if (!validTypes.includes(field.type)) {
         errors.push(`${fieldPath}: type must be one of: ${validTypes.join(', ')}`);
       }
@@ -68,6 +136,7 @@ function validateCustomFields(customFields) {
           errors.push(`${fieldPath}: multi-entry fields require entryConfig.remarkLabel`);
         }
       }
+      
       if (field.type === 'multi-entry-date') {
         if (!field.entryConfig) {
           errors.push(`${fieldPath}: multi-entry-date fields require entryConfig object`);
@@ -76,7 +145,7 @@ function validateCustomFields(customFields) {
             errors.push(`${fieldPath}: multi-entry-date fields require entryConfig.remarkLabel`);
           }
         }
-    }
+      }
 
       if (typeof field.position !== 'number' || field.position < 0) {
         errors.push(`${fieldPath}: position must be a non-negative number`);
@@ -105,7 +174,7 @@ function validateCustomFields(customFields) {
 }
 
 /**
- * Enhanced membership config validation including custom fields
+ * Enhanced membership config validation including custom fields and groups
  */
 function validateMembershipConfig(config) {
   const errors = [];
@@ -115,13 +184,13 @@ function validateMembershipConfig(config) {
     return { isValid: false, errors };
   }
   
-  const { statuses, defaultCurrency, joiningSources, leavingReasons, customFields } = config.membershipConfig;
+  const { statuses, defaultCurrency, joiningSources, leavingReasons, customFields, groups, groupSettings } = config.membershipConfig;
   
-  // Existing validation (statuses, sources, reasons) - keeping original code
+  // Existing validation (statuses, sources, reasons)
   if (!Array.isArray(statuses) || statuses.length === 0) {
     errors.push('At least one membership status is required');
   } else {
-    // Status-specific validation (existing)
+    // Status-specific validation
     statuses.forEach((status, index) => {
       if (!status.key || typeof status.key !== 'string') {
         errors.push(`Status ${index + 1}: key is required and must be a string`);
@@ -218,10 +287,16 @@ function validateMembershipConfig(config) {
     errors.push('defaultCurrency must be one of: EUR, USD, CHF, GBP');
   }
   
-  // ✅ NEW: Validate custom fields
+  // Validate custom fields
   const customFieldsValidation = validateCustomFields(customFields);
   if (!customFieldsValidation.isValid) {
     errors.push(...customFieldsValidation.errors);
+  }
+  
+  // Validate groups
+  const groupsValidation = validateGroups(groups, groupSettings);
+  if (!groupsValidation.isValid) {
+    errors.push(...groupsValidation.errors);
   }
   
   return {
@@ -231,7 +306,7 @@ function validateMembershipConfig(config) {
 }
 
 /**
- * Generate default configuration with custom fields for breeding club
+ * Generate default configuration with custom fields and groups for breeding club
  */
 function getDefaultMembershipConfig(orgType = 'verein') {
   const baseConfig = {
@@ -288,7 +363,93 @@ function getDefaultMembershipConfig(orgType = 'verein') {
     defaultCurrency: 'EUR'
   };
 
-  // ✅ NEW: Add custom fields based on organization type
+  // Add groups based on organization type
+  if (orgType === 'verein') {
+    baseConfig.groups = [
+      {
+        key: 'vorstand',
+        label: 'Vorstand',
+        description: 'Mitglieder des Vereinsvorstands',
+        color: 'purple',
+        icon: '👔',
+        active: true
+      },
+      {
+        key: 'zuchtausschuss',
+        label: 'Zuchtausschuss',
+        description: 'Mitglieder des Zuchtausschusses',
+        color: 'blue',
+        icon: '🔬',
+        active: true
+      },
+      {
+        key: 'preisrichter',
+        label: 'Preisrichter',
+        description: 'Qualifizierte Preisrichter für Ausstellungen',
+        color: 'orange',
+        icon: '⚖️',
+        active: true
+      },
+      {
+        key: 'jugend',
+        label: 'Jugendgruppe',
+        description: 'Jugendliche Mitglieder unter 18 Jahren',
+        color: 'green',
+        icon: '🌱',
+        active: true
+      },
+      {
+        key: 'ehrenmitglied',
+        label: 'Ehrenmitglied',
+        description: 'Ehrenmitglieder des Vereins',
+        color: 'yellow',
+        icon: '🏆',
+        active: true
+      }
+    ];
+    
+    baseConfig.groupSettings = {
+      allowMultiple: true,
+      requiredOnJoin: false,
+      showInReports: true
+    };
+  } else {
+    // For companies, different groups
+    baseConfig.groups = [
+      {
+        key: 'premium',
+        label: 'Premium Kunden',
+        description: 'Kunden mit Premium-Status',
+        color: 'yellow',
+        icon: '⭐',
+        active: true
+      },
+      {
+        key: 'partner',
+        label: 'Geschäftspartner',
+        description: 'Strategische Geschäftspartner',
+        color: 'blue',
+        icon: '🤝',
+        active: true
+      },
+      {
+        key: 'reseller',
+        label: 'Wiederverkäufer',
+        description: 'Autorisierte Wiederverkäufer',
+        color: 'green',
+        icon: '🏪',
+        active: true
+      }
+    ];
+    
+    baseConfig.groupSettings = {
+      allowMultiple: false,
+      requiredOnJoin: false,
+      showInReports: true
+    };
+  }
+
+  // Add custom fields based on organization type
   if (orgType === 'verein') {
     baseConfig.customFields = {
       tabs: [
@@ -477,11 +638,11 @@ function getDefaultMembershipConfig(orgType = 'verein') {
   return baseConfig;
 }
 
-// Enhanced routes with custom fields support
+// Enhanced routes with custom fields and groups support
 function setupRoutes(models) {
-  const { Organization } = models;
+  const { Organization, Member } = models;
 
-  // GET /api/organization/config - Enhanced with custom fields
+  // GET /api/organization/config - Enhanced with custom fields and groups
   router.get('/', async (req, res) => {
     try {
       const organization = await Organization.findOne({
@@ -509,6 +670,11 @@ function setupRoutes(models) {
           tabCount: config.membershipConfig?.customFields?.tabs?.length || 0,
           fieldCount: config.membershipConfig?.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
           activeTabCount: config.membershipConfig?.customFields?.tabs?.filter(tab => tab.active !== false)?.length || 0
+        },
+        groupsInfo: {
+          totalGroups: config.membershipConfig?.groups?.length || 0,
+          activeGroups: config.membershipConfig?.groups?.filter(g => g.active !== false)?.length || 0,
+          allowMultiple: config.membershipConfig?.groupSettings?.allowMultiple ?? true
         }
       });
     } catch (error) {
@@ -520,7 +686,7 @@ function setupRoutes(models) {
     }
   });
 
-  // ✅ NEW: GET /api/organization/config/member-statuses - Get member statuses configuration
+  // GET /api/organization/config/member-statuses - Get member statuses configuration
   router.get('/member-statuses', async (req, res) => {
     try {
       const organization = await Organization.findOne();
@@ -563,7 +729,7 @@ function setupRoutes(models) {
     }
   });
     
-  // ✅ NEW: GET /api/organization/config/custom-fields - Get custom fields configuration
+  // GET /api/organization/config/custom-fields - Get custom fields configuration
   router.get('/custom-fields', async (req, res) => {
     try {
       const organization = await Organization.findOne();
@@ -592,6 +758,146 @@ function setupRoutes(models) {
     }
   });
 
+  // GET /api/organization/config/groups - Get all groups
+  router.get('/groups', async (req, res) => {
+    try {
+      const organization = await Organization.findOne();
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' });
+      }
+      
+      const groups = organization.settings?.membershipConfig?.groups || [];
+      const activeGroups = groups.filter(g => g.active !== false);
+      
+      // Get member count for each group
+      const groupStats = await Promise.all(
+        activeGroups.map(async (group) => {
+          const memberCount = await Member.count({ 
+            where: {
+              groups: {
+                [models.Sequelize.Op.contains]: [group.key]
+              },
+              isDeleted: { [models.Sequelize.Op.ne]: true }
+            }
+          });
+          return {
+            ...group,
+            memberCount
+          };
+        })
+      );
+      
+      res.json({
+        groups: groupStats,
+        settings: organization.settings?.membershipConfig?.groupSettings || {},
+        stats: {
+          total: groups.length,
+          active: activeGroups.length,
+          totalMembers: await Member.count({ where: { isDeleted: { [models.Sequelize.Op.ne]: true } } }),
+          membersWithGroups: await Member.count({ 
+            where: {
+              groups: { [models.Sequelize.Op.ne]: null },
+              groups: { [models.Sequelize.Op.ne]: [] },
+              isDeleted: { [models.Sequelize.Op.ne]: true }
+            }
+          })
+        }
+      });
+    } catch (error) {
+      console.error('❌ [GET_GROUPS] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch groups',
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/organization/config/groups/:groupKey/members - Get members of a specific group
+  router.get('/groups/:groupKey/members', async (req, res) => {
+    try {
+      const { groupKey } = req.params;
+      const { page = 1, limit = 50 } = req.query;
+      
+      const members = await Member.findAll({
+        where: {
+          groups: {
+            [models.Sequelize.Op.contains]: [groupKey]
+          },
+          isDeleted: { [models.Sequelize.Op.ne]: true }
+        },
+        attributes: ['id', 'memberNumber', 'firstName', 'lastName', 'email', 'status', 'groups'],
+        limit: limit * 1,
+        offset: (page - 1) * limit,
+        order: [['lastName', 'ASC'], ['firstName', 'ASC']]
+      });
+      
+      const total = await Member.count({
+        where: {
+          groups: {
+            [models.Sequelize.Op.contains]: [groupKey]
+          },
+          isDeleted: { [models.Sequelize.Op.ne]: true }
+        }
+      });
+      
+      res.json({
+        members,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      console.error('❌ [GET_GROUP_MEMBERS] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch group members',
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/members/:id/groups - Update member's groups
+  router.post('/members/:id/groups', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { groups } = req.body;
+      
+      // Validate that all groups exist
+      const organization = await Organization.findOne();
+      const validGroups = organization.settings?.membershipConfig?.groups
+        ?.filter(g => g.active !== false)
+        ?.map(g => g.key) || [];
+      
+      const invalidGroups = groups.filter(g => !validGroups.includes(g));
+      if (invalidGroups.length > 0) {
+        return res.status(400).json({
+          error: 'Invalid groups',
+          invalidGroups
+        });
+      }
+      
+      const member = await Member.findByPk(id);
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      
+      await member.update({ groups });
+      
+      res.json({ 
+        success: true,
+        groups: member.groups
+      });
+    } catch (error) {
+      console.error('❌ [UPDATE_MEMBER_GROUPS] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to update member groups',
+        details: error.message
+      });
+    }
+  });
+
   // PUT /api/organization/config - Enhanced validation
   router.put('/', async (req, res) => {
     try {
@@ -603,7 +909,7 @@ function setupRoutes(models) {
         });
       }
       
-      // Enhanced validation with custom fields
+      // Enhanced validation with custom fields and groups
       const validation = validateMembershipConfig(config);
       if (!validation.isValid) {
         return res.status(400).json({ 
@@ -647,6 +953,8 @@ function setupRoutes(models) {
           leavingReasonsCount: config.membershipConfig?.leavingReasons?.length || 0,
           customFieldsTabCount: config.membershipConfig?.customFields?.tabs?.length || 0,
           customFieldsTotalFields: config.membershipConfig?.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
+          groupsCount: config.membershipConfig?.groups?.length || 0,
+          activeGroupsCount: config.membershipConfig?.groups?.filter(g => g.active !== false)?.length || 0,
           defaultCurrency: config.membershipConfig?.defaultCurrency || 'EUR'
         }
       });
@@ -666,7 +974,7 @@ function setupRoutes(models) {
     }
   });
 
-  // ✅ NEW: POST /api/organization/config/reset-defaults - Enhanced with custom fields
+  // POST /api/organization/config/reset-defaults - Enhanced with custom fields and groups
   router.post('/reset-defaults', async (req, res) => {
     try {
       const organization = await Organization.findOne();
@@ -711,6 +1019,7 @@ function setupRoutes(models) {
           leavingReasonsCount: defaultConfig.membershipConfig.leavingReasons.length,
           customFieldsTabCount: defaultConfig.membershipConfig.customFields?.tabs?.length || 0,
           customFieldsTotalFields: defaultConfig.membershipConfig.customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
+          groupsCount: defaultConfig.membershipConfig.groups?.length || 0,
           backupCreated: true
         }
       });
@@ -736,10 +1045,10 @@ function setupRoutes(models) {
       
       const validation = validateMembershipConfig(config);
       
-      // Calculate additional statistics including custom fields
+      // Calculate additional statistics including custom fields and groups
       let stats = {};
       if (validation.isValid && config.membershipConfig) {
-        const { statuses, joiningSources, leavingReasons, customFields } = config.membershipConfig;
+        const { statuses, joiningSources, leavingReasons, customFields, groups } = config.membershipConfig;
         
         stats = {
           totalStatuses: statuses?.length || 0,
@@ -753,6 +1062,8 @@ function setupRoutes(models) {
           customFieldsTabCount: customFields?.tabs?.length || 0,
           customFieldsTotalFields: customFields?.tabs?.reduce((sum, tab) => sum + (tab.fields?.length || 0), 0) || 0,
           customFieldsActiveTabCount: customFields?.tabs?.filter(tab => tab.active !== false)?.length || 0,
+          groupsCount: groups?.length || 0,
+          activeGroupsCount: groups?.filter(g => g.active !== false)?.length || 0,
           uniqueFrequencies: [...new Set(statuses?.map(s => s.billing?.frequency).filter(Boolean))] || [],
           totalFeesIfAllActive: statuses
             ?.filter(s => s.billing?.active)
@@ -781,6 +1092,7 @@ function setupRoutes(models) {
 module.exports = {
   validateMembershipConfig,
   validateCustomFields,
+  validateGroups,
   getDefaultMembershipConfig,
   setupRoutes
 };
