@@ -114,9 +114,10 @@ function defineMemberModel(sequelize) {
       defaultValue: 'active'
     },
     joinedAt: {
-      type: DataTypes.DATEONLY,
-      defaultValue: DataTypes.NOW,
-      field: 'joined_at'
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    field: 'joined_at'
+
     }
   }, {
     tableName: 'members',
@@ -614,7 +615,7 @@ function setupRoutes(models) {
         organizationId: organization.id,
         status,
         membershipData: validatedMembershipData,
-        joinedAt: membershipData?.joinDate || new Date()
+        joinedAt: membershipData?.joinDate || null
       });
       
       const createdMember = await Member.findByPk(member.id, {

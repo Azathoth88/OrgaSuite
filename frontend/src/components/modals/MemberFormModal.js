@@ -59,7 +59,7 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
     // ✅ NEU: Gruppen
     groups: [],
     membershipData: {
-      joinDate: new Date().toISOString().split('T')[0],
+      joinDate: '',
       membershipStatus: '',
       joiningSource: '',
       leavingReason: '',
