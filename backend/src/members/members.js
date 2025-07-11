@@ -1,6 +1,7 @@
 const express = require('express');
 const { DataTypes, Op } = require('sequelize');
 const { validateIBANWithLogging } = require('../utils/ibanUtils');
+const { addCalculatedFields, calculateMemberStatus } = require('../utils/memberStatusHelper');
 
 // Router erstellen
 const router = express.Router();
@@ -114,10 +115,9 @@ function defineMemberModel(sequelize) {
       defaultValue: 'active'
     },
     joinedAt: {
-    type: DataTypes.DATEONLY,
-    allowNull: true,
-    field: 'joined_at'
-
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      field: 'joined_at'
     }
   }, {
     tableName: 'members',
@@ -323,11 +323,12 @@ function setupRoutes(models) {
 
       const { count, rows: members } = queryResult;
 
-      // Add calculated age to response
-      const membersWithAge = members.map(member => ({
-        ...member.toJSON(),
-        age: member.age
-      }));
+      // Add calculated fields including status
+      const membersWithCalculatedStatus = members.map(member => {
+        const memberData = member.toJSON();
+        memberData.age = member.age;
+        return addCalculatedFields(memberData);
+      });
 
       const totalPages = Math.ceil(count / pageLimit);
       const hasNextPage = parseInt(page) < totalPages;
@@ -336,7 +337,7 @@ function setupRoutes(models) {
       console.log(`✅ Retrieved ${members.length} of ${count} members for org ${organization.id}`);
 
       res.json({
-        members: membersWithAge,
+        members: membersWithCalculatedStatus,
         pagination: {
           currentPage: parseInt(page),
           totalPages,
@@ -494,11 +495,10 @@ function setupRoutes(models) {
         return res.status(404).json({ error: 'Member not found' });
       }
       
-      // Add calculated age
       const memberData = member.toJSON();
       memberData.age = member.age;
-      
-      res.json(memberData);
+      const memberWithStatus = addCalculatedFields(memberData);
+      res.json(memberWithStatus);
     } catch (error) {
       console.error('❌ [GET_MEMBER] Error:', error);
       res.status(500).json({ 
@@ -514,7 +514,7 @@ function setupRoutes(models) {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        status = 'active', membershipData 
+        membershipData 
       } = req.body;
       
       if (!firstName || !lastName) {
@@ -613,7 +613,6 @@ function setupRoutes(models) {
         memberNumber: generatedMemberNumber,
         passwordHash: 'temp_password',
         organizationId: organization.id,
-        status,
         membershipData: validatedMembershipData,
         joinedAt: membershipData?.joinDate || null
       });
@@ -625,13 +624,15 @@ function setupRoutes(models) {
         }]
       });
       
-      // Add calculated age
+      // Add calculated fields including status
       const memberData = createdMember.toJSON();
       memberData.age = createdMember.age;
+      const memberWithStatus = addCalculatedFields(memberData);
       
       console.log(`✅ Member created: ${firstName} ${lastName} (${createdMember.memberNumber}) in org ${organization.id}`);
       
-      res.status(201).json(memberData);
+      res.status(201).json(memberWithStatus);
+
     } catch (error) {
       console.error('❌ [CREATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
@@ -665,7 +666,7 @@ function setupRoutes(models) {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        status, membershipData 
+        membershipData 
       } = req.body;
       
       const organization = await Organization.findOne();
@@ -739,11 +740,10 @@ function setupRoutes(models) {
         website,
         address,
         memberNumber,
-        status,
         membershipData: validatedMembershipData
       };
 
-      // NEU: Wenn joinDate vorhanden ist, auch joinedAt aktualisieren
+      // Wenn joinDate vorhanden ist, auch joinedAt aktualisieren
       if (membershipData?.joinDate) {
         updateFields.joinedAt = membershipData.joinDate;
       }
@@ -759,13 +759,14 @@ function setupRoutes(models) {
         }]
       });
       
-      // Add calculated age
+      // Add calculated fields including status
       const memberData = updatedMember.toJSON();
       memberData.age = updatedMember.age;
+      const memberWithStatus = addCalculatedFields(memberData);
       
       console.log(`✅ Member updated: ${firstName} ${lastName} in org ${organization.id}`);
       
-      res.json(memberData);
+      res.json(memberWithStatus);
     } catch (error) {
       console.error('❌ [UPDATE_MEMBER] Error:', error);
       if (error.name === 'SequelizeUniqueConstraintError') {
@@ -1033,7 +1034,7 @@ function setupRoutes(models) {
           member.landline || '',
           member.mobile || '',
           member.website || '',
-          member.status || '',
+          calculateMemberStatus(member.joinedAt, member.membershipData?.leavingDate) || 'inactive',
           member.address?.street || '',
           member.address?.zip || '',
           member.address?.city || '',
