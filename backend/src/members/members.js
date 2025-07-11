@@ -112,7 +112,8 @@ function defineMemberModel(sequelize) {
     },
     status: {
       type: DataTypes.ENUM('active', 'inactive', 'suspended'),
-      defaultValue: 'active'
+      defaultValue: 'active',
+      comment: 'DEPRECATED - Status wird virtuell berechnet'
     },
     joinedAt: {
       type: DataTypes.DATEONLY,
@@ -216,7 +217,7 @@ function setupRoutes(models) {
         sortBy = 'created_at',
         sortOrder = 'DESC',
         search = '',
-        status = '',
+        status = '',  // Wird im Frontend gefiltert
         memberNumber = '',
         firstName = '',
         lastName = '',
@@ -234,14 +235,10 @@ function setupRoutes(models) {
       const offset = (parseInt(page) - 1) * parseInt(limit);
       const pageLimit = parseInt(limit);
 
-      // Build where conditions
+      // Build where conditions - Status-Filter entfernt!
       const whereConditions = {
         organizationId: organization.id
       };
-      
-      if (status && ['active', 'inactive', 'suspended'].includes(status)) {
-        whereConditions.status = status;
-      }
 
       if (memberNumber) {
         whereConditions.memberNumber = { [Op.iLike]: `%${memberNumber}%` };
@@ -292,8 +289,8 @@ function setupRoutes(models) {
         ...searchCondition
       };
 
-      // Validate and build sort order
-      const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'status', 'created_at', 'joinedAt', 'birthDate'];
+      // Validate and build sort order - 'status' aus validSortFields entfernt
+      const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'created_at', 'joinedAt', 'birthDate'];
       const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
       const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
@@ -348,7 +345,7 @@ function setupRoutes(models) {
         },
         filters: {
           search,
-          status,
+          status,  // Wird im Frontend verarbeitet
           memberNumber,
           firstName,
           lastName,
@@ -377,7 +374,7 @@ function setupRoutes(models) {
     }
   });
 
-  // Member statistics
+  // Member statistics - mit SQL-basierter Status-Berechnung
   router.get('/stats', async (req, res) => {
     try {
       const organization = await Organization.findOne();
@@ -385,15 +382,39 @@ function setupRoutes(models) {
         return res.status(400).json({ error: 'No organization configured' });
       }
 
-      const [total, active, inactive, suspended, male, female, diverse] = await Promise.all([
+      // Basis-Statistiken
+      const [total, male, female, diverse] = await Promise.all([
         Member.count({ where: { organizationId: organization.id } }),
-        Member.count({ where: { status: 'active', organizationId: organization.id } }),
-        Member.count({ where: { status: 'inactive', organizationId: organization.id } }),
-        Member.count({ where: { status: 'suspended', organizationId: organization.id } }),
         Member.count({ where: { gender: 'male', organizationId: organization.id } }),
         Member.count({ where: { gender: 'female', organizationId: organization.id } }),
         Member.count({ where: { gender: 'diverse', organizationId: organization.id } })
       ]);
+
+      // Status-Statistiken mit SQL-basierter Berechnung
+      const statusStats = await sequelize.query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE 
+            WHEN joined_at IS NULL THEN 1 
+          END) as interessenten,
+          COUNT(CASE 
+            WHEN joined_at IS NOT NULL 
+              AND (membership_data->>'leavingDate' IS NULL 
+                OR (membership_data->>'leavingDate')::date >= CURRENT_DATE) 
+            THEN 1 
+          END) as active,
+          COUNT(CASE 
+            WHEN joined_at IS NOT NULL 
+              AND membership_data->>'leavingDate' IS NOT NULL 
+              AND (membership_data->>'leavingDate')::date < CURRENT_DATE 
+            THEN 1 
+          END) as inactive
+        FROM members 
+        WHERE organization_id = :orgId
+      `, {
+        replacements: { orgId: organization.id },
+        type: sequelize.QueryTypes.SELECT
+      });
 
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
@@ -446,9 +467,10 @@ function setupRoutes(models) {
       res.json({
         overview: {
           total,
-          active,
-          inactive,
-          suspended,
+          active: statusStats[0].active,
+          inactive: statusStats[0].inactive,
+          interessenten: statusStats[0].interessenten,
+          suspended: 0,  // Wird nicht mehr verwendet
           newThisWeek: newMembersThisWeek
         },
         gender: {
@@ -846,7 +868,8 @@ function setupRoutes(models) {
         return res.status(400).json({ error: 'No organization configured' });
       }
 
-      const allowedFields = ['status', 'landline', 'mobile', 'address', 'gender'];
+      // Status aus allowedFields entfernt
+      const allowedFields = ['landline', 'mobile', 'address', 'gender'];
       const updateData = {};
       
       for (const [key, value] of Object.entries(updates)) {
@@ -951,7 +974,8 @@ function setupRoutes(models) {
   // Export members as CSV
   router.get('/export/csv', async (req, res) => {
     try {
-      const { status, search } = req.query;
+      const { search } = req.query;
+      // Status-Filter entfernt
       
       const organization = await Organization.findOne();
       if (!organization) {
@@ -961,7 +985,6 @@ function setupRoutes(models) {
       const whereConditions = {
         organizationId: organization.id
       };
-      if (status) whereConditions.status = status;
       
       let searchCondition = {};
       if (search) {
@@ -1021,6 +1044,13 @@ function setupRoutes(models) {
           '': 'Nicht angegeben'
         };
         
+        // Status berechnen
+        const calculatedStatus = calculateMemberStatus(member.joinedAt, member.membershipData?.leavingDate);
+        const statusMap = {
+          active: 'Aktiv',
+          inactive: 'Inaktiv'
+        };
+        
         return [
           member.memberNumber || '',
           member.salutation || '',
@@ -1034,7 +1064,7 @@ function setupRoutes(models) {
           member.landline || '',
           member.mobile || '',
           member.website || '',
-          calculateMemberStatus(member.joinedAt, member.membershipData?.leavingDate) || 'inactive',
+          statusMap[calculatedStatus] || 'Inaktiv',
           member.address?.street || '',
           member.address?.zip || '',
           member.address?.city || '',
