@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+// frontend/src/components/views/MembersView.js - VOLLSTÄNDIG MIT ALLEN FUNKTIONEN
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { OrganizationContext } from '../../contexts/OrganizationContext';
 import axios from 'axios';
 import { useOrgTranslation } from '../../hooks/useOrgTranslation';
 import MemberFormModal from '../modals/MemberFormModal';
@@ -6,7 +8,8 @@ import MemberFormModal from '../modals/MemberFormModal';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const MembersView = () => {
-  const { t, organization } = useOrgTranslation();
+  const { organization } = useContext(OrganizationContext);
+  const { t } = useOrgTranslation();
   
   // Refs für Input-Felder zur Fokus-Verwaltung
   const searchInputRef = useRef(null);
@@ -51,92 +54,73 @@ const MembersView = () => {
     phone: ''
   });
   const [debouncedFilters, setDebouncedFilters] = useState(filters);
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  
-  // UI States
-  const [selectedMembers, setSelectedMembers] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
-
-  // Debounce search term
+  
+  // Selection States
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+  
+  // Autocomplete States
+  const [suggestions, setSuggestions] = useState({});
+  const [showSuggestions, setShowSuggestions] = useState({});
+  
+  // Status Configuration from Organization
+  const [statusConfig, setStatusConfig] = useState([]);
+  
+  // Load status configuration
+  useEffect(() => {
+    if (organization?.settings?.membershipConfig?.statuses) {
+      setStatusConfig(organization.settings.membershipConfig.statuses);
+    }
+  }, [organization]);
+  
+  // Debouncing für Suche
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-    }, 500);
-
+    }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Debounce filters
+  // Debouncing für Filter
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedFilters(filters);
-    }, 800);
-
+    }, 300);
     return () => clearTimeout(timer);
   }, [filters]);
 
-  // Speichere Fokus vor dem Fetch
-  const saveFocusState = () => {
-    const activeElement = document.activeElement;
-    
-    if (searchInputRef.current && activeElement === searchInputRef.current) {
-      currentFocusedField.current = 'search';
-      currentCursorPosition.current = searchInputRef.current.selectionStart;
-      return;
-    }
-    
-    Object.entries(filterRefs.current).forEach(([key, ref]) => {
-      if (ref && activeElement === ref) {
-        currentFocusedField.current = key;
-        currentCursorPosition.current = ref.selectionStart;
-      }
-    });
-  };
-
-  // Stelle Fokus nach dem Fetch wieder her
-  const restoreFocusState = () => {
-    setTimeout(() => {
-      if (currentFocusedField.current === 'search' && searchInputRef.current) {
-        searchInputRef.current.focus();
-        if (currentCursorPosition.current !== null) {
-          searchInputRef.current.setSelectionRange(
-            currentCursorPosition.current, 
-            currentCursorPosition.current
-          );
-        }
-      } else if (currentFocusedField.current && filterRefs.current[currentFocusedField.current]) {
-        const input = filterRefs.current[currentFocusedField.current];
-        input.focus();
-        if (currentCursorPosition.current !== null) {
-          input.setSelectionRange(
-            currentCursorPosition.current, 
-            currentCursorPosition.current
-          );
-        }
-      }
+  // Fokus-Management
+  useEffect(() => {
+    if (currentFocusedField.current && currentCursorPosition.current !== null) {
+      const field = currentFocusedField.current;
+      const position = currentCursorPosition.current;
       
-      currentFocusedField.current = null;
-      currentCursorPosition.current = null;
-    }, 50);
-  };
+      if (field === 'search' && searchInputRef.current) {
+        searchInputRef.current.focus();
+        searchInputRef.current.setSelectionRange(position, position);
+      } else if (filterRefs.current[field]) {
+        filterRefs.current[field].focus();
+        filterRefs.current[field].setSelectionRange(position, position);
+      }
+    }
+  }, [members]);
 
+  // Data Loading
   useEffect(() => {
     fetchMembers();
-  }, [currentPage, itemsPerPage, sortConfig, debouncedFilters, debouncedSearchTerm]);
+  }, [debouncedSearchTerm, debouncedFilters, sortConfig, pagination.currentPage]);
 
   const fetchMembers = async () => {
     try {
-      saveFocusState();
       setLoading(true);
+      setError(null);
       
       const params = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage,
         sortBy: sortConfig.key,
-        sortOrder: sortConfig.direction.toUpperCase(),
+        sortOrder: sortConfig.direction,
         search: debouncedSearchTerm,
         ...Object.fromEntries(
           Object.entries(debouncedFilters).filter(([_, value]) => value !== '')
@@ -147,28 +131,87 @@ const MembersView = () => {
       
       if (response.data.members) {
         setMembers(response.data.members);
-        setPagination(response.data.pagination);
+        setPagination(prev => ({
+          ...prev,
+          totalPages: response.data.pagination.pages,
+          totalItems: response.data.pagination.total
+        }));
       } else {
-        setMembers(Array.isArray(response.data) ? response.data : []);
-        setPagination({
-          currentPage: 1,
-          totalPages: 1,
-          totalItems: Array.isArray(response.data) ? response.data.length : 0,
-          itemsPerPage: Array.isArray(response.data) ? response.data.length : 0
-        });
+        setMembers(response.data);
       }
       
-      setError(null);
+      setSelectAll(false);
+      setSelectedRows([]);
     } catch (error) {
       console.error('Error fetching members:', error);
-      setError(t('common.loadError', 'Fehler beim Laden der Daten'));
+      setError(t('common.loadError', 'Fehler beim Laden der Mitglieder'));
     } finally {
       setLoading(false);
-      restoreFocusState();
     }
   };
 
-  // Modal Handlers
+  // Autocomplete
+  const fetchSuggestions = async (field, value) => {
+    if (!value || value.length < 2) {
+      setSuggestions(prev => ({ ...prev, [field]: [] }));
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API_URL}/members/suggestions`, {
+        params: { q: value, field }
+      });
+      setSuggestions(prev => ({ ...prev, [field]: response.data.suggestions }));
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  };
+
+  // Handlers
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const handleFilterChange = (field, value) => {
+    const input = field === 'search' ? searchInputRef.current : filterRefs.current[field];
+    if (input) {
+      currentFocusedField.current = field;
+      currentCursorPosition.current = input.selectionStart;
+    }
+    
+    setFilters(prev => ({ ...prev, [field]: value }));
+    fetchSuggestions(field, value);
+  };
+
+  const handleSuggestionClick = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setShowSuggestions(prev => ({ ...prev, [field]: false }));
+  };
+
+  const handlePageChange = (page) => {
+    setPagination(prev => ({ ...prev, currentPage: page }));
+  };
+
+  const toggleRowSelection = (memberId) => {
+    setSelectedRows(prev => 
+      prev.includes(memberId) 
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelectedRows([]);
+    } else {
+      setSelectedRows(members.map(member => member.id));
+    }
+    setSelectAll(!selectAll);
+  };
+
   const handleAddMember = () => {
     setSelectedMember(null);
     setShowMemberModal(true);
@@ -179,18 +222,14 @@ const MembersView = () => {
     setShowMemberModal(true);
   };
 
-  const handleMemberSuccess = (savedMember) => {
-    fetchMembers();
-  };
-
-  const handleDeleteMember = (member) => {
+  const handleDeleteClick = (member) => {
     setMemberToDelete(member);
     setShowDeleteConfirm(true);
   };
 
-  const confirmDelete = async () => {
+  const handleDeleteConfirm = async () => {
     if (!memberToDelete) return;
-    
+
     try {
       await axios.delete(`${API_URL}/members/${memberToDelete.id}`);
       fetchMembers();
@@ -202,154 +241,136 @@ const MembersView = () => {
     }
   };
 
-  // Sorting Logic
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+  const handleBulkDelete = async () => {
+    if (selectedRows.length === 0) return;
+    
+    if (!window.confirm(t('members.confirmBulkDelete', `${selectedRows.length} Mitglieder wirklich löschen?`))) {
+      return;
     }
-    setSortConfig({ key, direction });
-  };
 
-  // Filter Logic
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  // Setze Seite zurück, wenn debouncedFilters sich ändern
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters, debouncedSearchTerm]);
-
-  const clearFilters = () => {
-    setFilters({
-      status: '',
-      memberNumber: '',
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: ''
-    });
-    setSearchTerm('');
-    setCurrentPage(1);
-  };
-
-  const displayMembers = members;
-  const totalPages = pagination.totalPages;
-  const totalItems = pagination.totalItems;
-
-  // Selection Logic
-  const handleSelectMember = (memberId) => {
-    setSelectedMembers(prev => 
-      prev.includes(memberId) 
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedMembers.length === displayMembers.length) {
-      setSelectedMembers([]);
-    } else {
-      setSelectedMembers(displayMembers.map(member => member.id));
+    try {
+      await axios.delete(`${API_URL}/members/bulk`, {
+        data: { memberIds: selectedRows }
+      });
+      fetchMembers();
+    } catch (error) {
+      console.error('Error bulk deleting:', error);
+      alert(t('common.deleteError', 'Fehler beim Löschen'));
     }
   };
 
-  // Status Badge Component
+  // ✅ KORRIGIERTE Status Badge Component mit Konfiguration
   const StatusBadge = ({ status }) => {
-    const statusConfig = {
-      active: { 
-        bg: 'bg-green-100', 
-        text: 'text-green-800', 
-        label: t('members.status.active') 
-      },
-      inactive: { 
-        bg: 'bg-gray-100', 
-        text: 'text-gray-800', 
-        label: t('members.status.inactive') 
-      },
-      suspended: { 
-        bg: 'bg-red-100', 
-        text: 'text-red-800', 
-        label: t('members.status.suspended') 
-      }
-    };
-
-    const config = statusConfig[status] || statusConfig.inactive;
-
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        {config.label}
-      </span>
-    );
-  };
-
-  // Sort Icon Component
-  const SortIcon = ({ column }) => {
-    if (sortConfig.key !== column) {
-      return <span className="text-gray-400">↕️</span>;
+    // Status-Konfiguration aus Organization Settings
+    const configuredStatus = statusConfig.find(s => s.key === status);
+    
+    // Fallback für unbekannte Status
+    if (!configuredStatus) {
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          {status}
+        </span>
+      );
     }
-    return (
-      <span className="text-blue-600">
-        {sortConfig.direction === 'asc' ? '↑' : '↓'}
-      </span>
-    );
-  };
-
-  // Loading Overlay
-  const LoadingOverlay = () => {
-    if (!loading) return null;
+    
+    // Farb-Mapping für Tailwind CSS Klassen
+    const colorMap = {
+      green: { bg: 'bg-green-100', text: 'text-green-800' },
+      gray: { bg: 'bg-gray-100', text: 'text-gray-800' },
+      red: { bg: 'bg-red-100', text: 'text-red-800' },
+      blue: { bg: 'bg-blue-100', text: 'text-blue-800' },
+      yellow: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      purple: { bg: 'bg-purple-100', text: 'text-purple-800' },
+      pink: { bg: 'bg-pink-100', text: 'text-pink-800' },
+      indigo: { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+      orange: { bg: 'bg-orange-100', text: 'text-orange-800' },
+      teal: { bg: 'bg-teal-100', text: 'text-teal-800' },
+      cyan: { bg: 'bg-cyan-100', text: 'text-cyan-800' }
+    };
+    
+    const colors = colorMap[configuredStatus.color] || colorMap.gray;
     
     return (
-      <div className="absolute top-0 right-0 m-4">
-        <div className="bg-white rounded-lg shadow-lg p-3 flex items-center space-x-2">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-          <span className="text-sm text-gray-600">Lade...</span>
-        </div>
-      </div>
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
+        {configuredStatus.label}
+        {configuredStatus.billing?.active && (
+          <span className="ml-1 text-xs">
+            ({configuredStatus.billing.fee} {organization?.settings?.membershipConfig?.defaultCurrency || 'EUR'})
+          </span>
+        )}
+      </span>
     );
   };
 
-  if (error && members.length === 0) {
+  // Column component
+  const SortableColumn = ({ column, children }) => (
+    <th 
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        {sortConfig.key === column && (
+          <span className="text-blue-600">
+            {sortConfig.direction === 'asc' ? '↑' : '↓'}
+          </span>
+        )}
+      </div>
+    </th>
+  );
+
+  // Loading state
+  if (loading && members.length === 0) {
     return (
-      <div className="p-6">
-        <div className="text-center">
-          <div className="text-red-600 text-6xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">{t('common.error', 'Fehler')}</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={fetchMembers}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            {t('actions.retry', 'Erneut versuchen')}
-          </button>
+      <div className="p-8">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-gray-200 rounded"></div>
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 relative">
-      <LoadingOverlay />
-      
+    <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-              👥 <span className="ml-2">{t('members.plural')}</span>
-            </h1>
-            <p className="text-gray-600 mt-1">
-              {totalItems} {t('members.plural')} 
-              {pagination.currentPage > 1 && 
-                ` (Seite ${pagination.currentPage}/${totalPages})`
-              }
-            </p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          {t('members.plural')}
+        </h1>
+        <p className="text-gray-600">
+          {t('members.subtitle', 'Verwalten Sie Ihre Mitglieder')}
+        </p>
+      </div>
+
+      {/* Actions Bar */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">
+              {pagination.totalItems} {t('members.total', 'Mitglieder insgesamt')}
+            </span>
+            {selectedRows.length > 0 && (
+              <>
+                <span className="text-sm text-gray-400">|</span>
+                <span className="text-sm text-blue-600 font-medium">
+                  {selectedRows.length} {t('members.selected', 'ausgewählt')}
+                </span>
+                <button
+                  onClick={handleBulkDelete}
+                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                >
+                  🗑️ {t('actions.delete')}
+                </button>
+              </>
+            )}
           </div>
-          <div className="flex space-x-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`px-4 py-2 rounded-lg border transition-colors ${
@@ -418,24 +439,30 @@ const MembersView = () => {
 
           {/* Column Filters */}
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 pt-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Status Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('common.status')}
+                </label>
                 <select
                   ref={el => filterRefs.current.status = el}
                   value={filters.status}
                   onChange={(e) => handleFilterChange('status', e.target.value)}
-                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Alle</option>
-                  <option value="active">Aktiv</option>
-                  <option value="inactive">Inaktiv</option>
-                  <option value="suspended">Gesperrt</option>
+                  <option value="">{t('members.allStatuses', 'Alle Status')}</option>
+                  {statusConfig.map(status => (
+                    <option key={status.key} value={status.key}>
+                      {status.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
+              {/* Member Number Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('members.memberNumber')}
                 </label>
                 <input
@@ -443,80 +470,113 @@ const MembersView = () => {
                   type="text"
                   value={filters.memberNumber}
                   onChange={(e) => handleFilterChange('memberNumber', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="z.B. M001"
-                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Vorname</label>
+              {/* First Name Filter */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('members.firstName')}
+                </label>
                 <input
                   ref={el => filterRefs.current.firstName = el}
                   type="text"
                   value={filters.firstName}
                   onChange={(e) => handleFilterChange('firstName', e.target.value)}
-                  placeholder="Vorname"
-                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  onFocus={() => setShowSuggestions(prev => ({ ...prev, firstName: true }))}
+                  onBlur={() => setTimeout(() => setShowSuggestions(prev => ({ ...prev, firstName: false })), 200)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Vorname filtern"
                 />
+                {showSuggestions.firstName && suggestions.firstName?.length > 0 && (
+                  <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-48 overflow-auto">
+                    {suggestions.firstName.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSuggestionClick('firstName', suggestion)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Nachname</label>
+              {/* Last Name Filter */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('members.lastName')}
+                </label>
                 <input
                   ref={el => filterRefs.current.lastName = el}
                   type="text"
                   value={filters.lastName}
                   onChange={(e) => handleFilterChange('lastName', e.target.value)}
-                  placeholder="Nachname"
-                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  onFocus={() => setShowSuggestions(prev => ({ ...prev, lastName: true }))}
+                  onBlur={() => setTimeout(() => setShowSuggestions(prev => ({ ...prev, lastName: false })), 200)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Nachname filtern"
                 />
+                {showSuggestions.lastName && suggestions.lastName?.length > 0 && (
+                  <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-48 overflow-auto">
+                    {suggestions.lastName.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSuggestionClick('lastName', suggestion)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Email Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">E-Mail</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('common.email')}
+                </label>
                 <input
                   ref={el => filterRefs.current.email = el}
                   type="text"
                   value={filters.email}
                   onChange={(e) => handleFilterChange('email', e.target.value)}
-                  placeholder="E-Mail"
-                  className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="E-Mail filtern"
                 />
               </div>
 
-              <div className="flex items-end">
-                <button
-                  onClick={clearFilters}
-                  className="w-full p-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                >
-                  Filter zurücksetzen
-                </button>
+              {/* Phone Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('common.phone')}
+                </label>
+                <input
+                  ref={el => filterRefs.current.phone = el}
+                  type="text"
+                  value={filters.phone}
+                  onChange={(e) => handleFilterChange('phone', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Telefon filtern"
+                />
               </div>
-            </div>
-          )}
-          
-          {/* Aktive Filter-Anzeige */}
-          {(debouncedSearchTerm || Object.values(debouncedFilters).some(f => f)) && (
-            <div className="mt-3 flex items-center text-sm text-gray-600">
-              <span className="mr-2">Aktive Filter:</span>
-              {debouncedSearchTerm && (
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                  Suche: {debouncedSearchTerm}
-                </span>
-              )}
-              {Object.entries(debouncedFilters).map(([key, value]) => 
-                value ? (
-                  <span key={key} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
-                    {key}: {value}
-                  </span>
-                ) : null
-              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Table */}
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Members Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -525,178 +585,94 @@ const MembersView = () => {
                 <th className="px-6 py-3 text-left">
                   <input
                     type="checkbox"
-                    checked={selectedMembers.length === displayMembers.length && displayMembers.length > 0}
-                    onChange={handleSelectAll}
+                    checked={selectAll}
+                    onChange={toggleSelectAll}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                 </th>
-                
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('memberNumber')}
-                >
-                  <div className="flex items-center">
-                    {t('members.memberNumber')}
-                    <SortIcon column="memberNumber" />
-                  </div>
-                </th>
-
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('name')}
-                >
-                  <div className="flex items-center">
-                    {t('common.name')}
-                    <SortIcon column="name" />
-                  </div>
-                </th>
-
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('email')}
-                >
-                  <div className="flex items-center">
-                    {t('common.email')}
-                    <SortIcon column="email" />
-                  </div>
-                </th>
-
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('phone')}
-                >
-                  <div className="flex items-center">
-                    {t('common.phone')}
-                    <SortIcon column="phone" />
-                  </div>
-                </th>
-
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('status')}
-                >
-                  <div className="flex items-center">
-                    {t('common.status')}
-                    <SortIcon column="status" />
-                  </div>
-                </th>
-
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('created_at')}
-                >
-                  <div className="flex items-center">
-                    {t('members.memberSince')}
-                    <SortIcon column="created_at" />
-                  </div>
-                </th>
-
+                <SortableColumn column="memberNumber">
+                  {t('members.memberNumber')}
+                </SortableColumn>
+                <SortableColumn column="lastName">
+                  {t('common.name')}
+                </SortableColumn>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Aktionen
+                  {t('common.email')}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {t('common.phone')}
+                </th>
+                <SortableColumn column="status">
+                  {t('common.status')}
+                </SortableColumn>
+                <SortableColumn column="joinedAt">
+                  {t('members.memberSince')}
+                </SortableColumn>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {t('actions.title', 'Aktionen')}
                 </th>
               </tr>
             </thead>
-
             <tbody className="bg-white divide-y divide-gray-200">
-              {displayMembers.length === 0 ? (
+              {members.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-12 text-center">
-                    <div className="text-gray-500">
-                      <div className="text-6xl mb-4">👥</div>
-                      <p className="text-lg font-medium">
-                        {searchTerm || Object.values(filters).some(f => f) 
-                          ? 'Keine Ergebnisse gefunden' 
-                          : `Keine ${t('members.plural')} vorhanden`
-                        }
-                      </p>
-                      {(searchTerm || Object.values(filters).some(f => f)) && (
-                        <button
-                          onClick={clearFilters}
-                          className="mt-2 text-blue-600 hover:text-blue-800"
-                        >
-                          Filter zurücksetzen
-                        </button>
-                      )}
-                    </div>
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                    {debouncedSearchTerm || Object.values(debouncedFilters).some(v => v) 
+                      ? t('members.noResults', 'Keine Ergebnisse gefunden')
+                      : t('members.empty', 'Noch keine Mitglieder vorhanden')}
                   </td>
                 </tr>
               ) : (
-                displayMembers.map((member) => (
-                  <tr 
-                    key={member.id} 
-                    className={`hover:bg-gray-50 ${
-                      selectedMembers.includes(member.id) ? 'bg-blue-50' : ''
-                    }`}
-                  >
+                members.map((member) => (
+                  <tr key={member.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
-                        checked={selectedMembers.includes(member.id)}
-                        onChange={() => handleSelectMember(member.id)}
+                        checked={selectedRows.includes(member.id)}
+                        onChange={() => toggleRowSelection(member.id)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                     </td>
-
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {member.memberNumber}
-                      </div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {member.memberNumber || '-'}
                     </td>
-
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-xs font-medium text-blue-600">
-                            {member.firstName.charAt(0)}{member.lastName.charAt(0)}
-                          </span>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {member.salutation && `${member.salutation} `}
+                          {member.firstName} {member.lastName}
                         </div>
-                        <div className="ml-3">
-                          <div className="text-sm font-medium text-gray-900">
-                            {member.firstName} {member.lastName}
-                          </div>
-                        </div>
+                        {member.title && (
+                          <div className="text-sm text-gray-500">{member.title}</div>
+                        )}
                       </div>
                     </td>
-
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{member.email}</div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {member.email || '-'}
                     </td>
-
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {member.phone || '—'}
-                      </div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {member.mobile || member.landline || '-'}
                     </td>
-
                     <td className="px-6 py-4 whitespace-nowrap">
                       <StatusBadge status={member.status} />
                     </td>
-
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {member.joinedAt 
                         ? new Date(member.joinedAt).toLocaleDateString('de-DE')
-                        : new Date(member.created_at).toLocaleDateString('de-DE')
+                        : '-'
                       }
                     </td>
-
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => {/* TODO: View member */}}
-                          className="text-blue-600 hover:text-blue-900"
-                          title={t('actions.view')}
-                        >
-                          👁️
-                        </button>
-                        <button
                           onClick={() => handleEditMember(member)}
-                          className="text-green-600 hover:text-green-900"
+                          className="text-blue-600 hover:text-blue-900"
                           title={t('actions.edit')}
                         >
                           ✏️
                         </button>
                         <button
-                          onClick={() => handleDeleteMember(member)}
+                          onClick={() => handleDeleteClick(member)}
                           className="text-red-600 hover:text-red-900"
                           title={t('actions.delete')}
                         >
@@ -712,165 +688,105 @@ const MembersView = () => {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+        {pagination.totalPages > 1 && (
+          <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
             <div className="flex items-center justify-between">
-              <div className="flex-1 flex justify-between sm:hidden">
-                <button
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Zurück
-                </button>
-                <button
-                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
-                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Weiter
-                </button>
+              <div className="text-sm text-gray-700">
+                {t('pagination.showing', 'Zeige')} {((pagination.currentPage - 1) * pagination.itemsPerPage) + 1} {t('pagination.to', 'bis')} {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} {t('pagination.of', 'von')} {pagination.totalItems} {t('pagination.results', 'Ergebnissen')}
               </div>
-              
-              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div className="flex items-center space-x-4">
-                  <p className="text-sm text-gray-700">
-                    Zeige {((pagination.currentPage - 1) * pagination.itemsPerPage) + 1} bis {Math.min(pagination.currentPage * pagination.itemsPerPage, totalItems)} von {totalItems} Einträgen
-                  </p>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handlePageChange(pagination.currentPage - 1)}
+                  disabled={pagination.currentPage === 1}
+                  className="px-3 py-1 rounded border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                >
+                  ←
+                </button>
+                {[...Array(Math.min(5, pagination.totalPages))].map((_, index) => {
+                  let pageNumber;
+                  if (pagination.totalPages <= 5) {
+                    pageNumber = index + 1;
+                  } else if (pagination.currentPage <= 3) {
+                    pageNumber = index + 1;
+                  } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                    pageNumber = pagination.totalPages - 4 + index;
+                  } else {
+                    pageNumber = pagination.currentPage - 2 + index;
+                  }
                   
-                  <select
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="border border-gray-300 rounded px-3 py-1 text-sm"
-                  >
-                    <option value={5}>5 pro Seite</option>
-                    <option value={10}>10 pro Seite</option>
-                    <option value={25}>25 pro Seite</option>
-                    <option value={50}>50 pro Seite</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  return (
                     <button
-                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                      disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                      key={pageNumber}
+                      onClick={() => handlePageChange(pageNumber)}
+                      className={`px-3 py-1 rounded text-sm ${
+                        pagination.currentPage === pageNumber
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 bg-white hover:bg-gray-50'
+                      }`}
                     >
-                      ‹
+                      {pageNumber}
                     </button>
-                    
-                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                      let pageNum;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-                      
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                            currentPage === pageNum
-                              ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
-                              : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                    
-                    <button
-                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                      disabled={currentPage === totalPages}
-                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      ›
-                    </button>
-                  </nav>
-                </div>
+                  );
+                })}
+                <button
+                  onClick={() => handlePageChange(pagination.currentPage + 1)}
+                  disabled={pagination.currentPage === pagination.totalPages}
+                  className="px-3 py-1 rounded border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                >
+                  →
+                </button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Modal */}
-      <MemberFormModal
-        isOpen={showMemberModal}
-        onClose={() => {
-          setShowMemberModal(false);
-          setSelectedMember(null);
-        }}
-        member={selectedMember}
-        onSuccess={handleMemberSuccess}
-      />
+      {/* Member Form Modal */}
+      {showMemberModal && (
+        <MemberFormModal
+          isOpen={showMemberModal}
+          onClose={() => {
+            setShowMemberModal(false);
+            setSelectedMember(null);
+          }}
+          member={selectedMember}
+          onSuccess={() => {
+            setShowMemberModal(false);
+            setSelectedMember(null);
+            fetchMembers();
+          }}
+        />
+      )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && memberToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md">
+            <h3 className="text-lg font-bold mb-4">
               {t('members.confirmDelete', 'Mitglied löschen?')}
             </h3>
             <p className="text-gray-600 mb-6">
-              Möchten Sie {memberToDelete.firstName} {memberToDelete.lastName} wirklich löschen?
-              Diese Aktion kann nicht rückgängig gemacht werden.
+              {t('members.deleteConfirmText', 'Möchten Sie dieses Mitglied wirklich löschen?')}
+              <br />
+              <strong>{memberToDelete.firstName} {memberToDelete.lastName}</strong>
             </p>
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   setMemberToDelete(null);
                 }}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                {t('actions.cancel', 'Abbrechen')}
+                {t('actions.cancel')}
               </button>
               <button
-                onClick={confirmDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                {t('actions.delete', 'Löschen')}
+                {t('actions.delete')}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Actions */}
-      {selectedMembers.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg">
-          <div className="flex items-center space-x-4">
-            <span>{selectedMembers.length} {t('members.plural')} ausgewählt</span>
-            <button
-              onClick={() => {/* TODO: Bulk edit */}}
-              className="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-sm"
-            >
-              Bearbeiten
-            </button>
-            <button
-              onClick={() => {/* TODO: Bulk delete */}}
-              className="bg-red-500 hover:bg-red-400 px-3 py-1 rounded text-sm"
-            >
-              Löschen
-            </button>
-            <button
-              onClick={() => setSelectedMembers([])}
-              className="text-blue-200 hover:text-white"
-            >
-              ✕
-            </button>
           </div>
         </div>
       )}
