@@ -715,7 +715,7 @@ const MembersView = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <MitgliedsstatusBadge 
-                        status={member.status} 
+                        status={member.membershipData?.membershipStatus} 
                         statuses={statusConfig}
                       />
                     </td>
