@@ -209,151 +209,189 @@ function setupMemberHooks(Member, Organization) {
 function setupRoutes(models) {
   const { Member, Organization, sequelize } = models;
 
-  // GET /api/members - List members with search, filter, sort, pagination
-  router.get('/', async (req, res) => {
-    try {
-      console.log('📊 Members API called with query:', req.query);
+// In backend/src/members/members.js
+// GET /api/members - List members with search, filter, sort, pagination
 
-      if (!Op || !Op.or || !Op.iLike) {
-        console.error('❌ Sequelize Op not available');
-        throw new Error('Sequelize operators not available');
-      }
+router.get('/', async (req, res) => {
+  try {
+    console.log('📊 Members API called with query:', req.query);
 
-      const {
-        page = 1,
-        limit = 10,
-        sortBy = 'created_at',
-        sortOrder = 'DESC',
-        search = '',
-        status = '',  // Wird im Frontend gefiltert
-        memberNumber = '',
-        firstName = '',
-        lastName = '',
-        email = '',
-        landline = '',
-        mobile = '',
-        gender = ''
-      } = req.query;
+    if (!Op || !Op.or || !Op.iLike) {
+      console.error('❌ Sequelize Op not available');
+      throw new Error('Sequelize operators not available');
+    }
 
-      const organization = await Organization.findOne();
-      if (!organization) {
-        return res.status(400).json({ error: 'No organization configured' });
-      }
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = 'created_at',
+      sortOrder = 'DESC',
+      search = '',
+      status = '',  // Mitgliedsstatus (aus Konfiguration)
+      calculatedStatus = '', // Berechneter Status (aktiv/inaktiv)
+      membershipStatus = '', // Alias für status
+      memberNumber = '',
+      firstName = '',
+      lastName = '',
+      email = '',
+      landline = '',
+      mobile = '',
+      gender = ''
+    } = req.query;
 
-      const offset = (parseInt(page) - 1) * parseInt(limit);
-      const pageLimit = parseInt(limit);
+    const organization = await Organization.findOne();
+    if (!organization) {
+      return res.status(400).json({ error: 'No organization configured' });
+    }
 
-      // Build where conditions - Status-Filter entfernt!
-      const whereConditions = {
-        organizationId: organization.id
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const pageLimit = parseInt(limit);
+
+    // Build where conditions
+    const whereConditions = {
+      organizationId: organization.id
+    };
+
+    if (memberNumber) {
+      whereConditions.memberNumber = { [Op.iLike]: `%${memberNumber}%` };
+    }
+
+    if (firstName) {
+      whereConditions.firstName = { [Op.iLike]: `%${firstName}%` };
+    }
+
+    if (lastName) {
+      whereConditions.lastName = { [Op.iLike]: `%${lastName}%` };
+    }
+
+    if (email) {
+      whereConditions.email = { [Op.iLike]: `%${email}%` };
+    }
+
+    if (landline) {
+      whereConditions.landline = { [Op.iLike]: `%${landline}%` };
+    }
+
+    if (mobile) {
+      whereConditions.mobile = { [Op.iLike]: `%${mobile}%` };
+    }
+
+    if (gender && ['male', 'female', 'diverse'].includes(gender)) {
+      whereConditions.gender = gender;
+    }
+
+    // NEU: Mitgliedsstatus-Filter (aus Konfiguration)
+    // Prüfe sowohl 'status' als auch 'membershipStatus' Parameter
+    const membershipStatusFilter = membershipStatus || status;
+    if (membershipStatusFilter) {
+      // Der Mitgliedsstatus ist in membershipData.membershipStatus gespeichert
+      whereConditions['membershipData.membershipStatus'] = membershipStatusFilter;
+    }
+
+    // Full-text search
+    let searchCondition = {};
+    if (search && search.trim() !== '') {
+      searchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${search}%` } },
+          { lastName: { [Op.iLike]: `%${search}%` } },
+          { email: { [Op.iLike]: `%${search}%` } },
+          { memberNumber: { [Op.iLike]: `%${search}%` } },
+          { landline: { [Op.iLike]: `%${search}%` } },
+          { mobile: { [Op.iLike]: `%${search}%` } },
+          { title: { [Op.iLike]: `%${search}%` } }
+        ]
       };
+    }
 
-      if (memberNumber) {
-        whereConditions.memberNumber = { [Op.iLike]: `%${memberNumber}%` };
-      }
+    const finalWhereCondition = {
+      ...whereConditions,
+      ...searchCondition
+    };
 
-      if (firstName) {
-        whereConditions.firstName = { [Op.iLike]: `%${firstName}%` };
-      }
+    // Validate and build sort order
+    // NEU: 'calculatedStatus' und 'membershipStatus' zu validSortFields hinzugefügt
+    const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'created_at', 'joinedAt', 'birthDate', 'calculatedStatus', 'membershipStatus'];
+    
+    let validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    
+    // Spezialbehandlung für calculatedStatus und membershipStatus beim Sortieren
+    if (sortBy === 'calculatedStatus') {
+      // Sortiere nach joinedAt und membershipData.leavingDate
+      validSortField = 'joinedAt';
+    } else if (sortBy === 'membershipStatus') {
+      // Sortiere nach membershipData.membershipStatus
+      validSortField = [['membershipData', 'membershipStatus']];
+    }
+    
+    const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
-      if (lastName) {
-        whereConditions.lastName = { [Op.iLike]: `%${lastName}%` };
-      }
+    let orderClause;
+    if (sortBy === 'name') {
+      orderClause = [
+        ['firstName', validSortOrder],
+        ['lastName', validSortOrder]
+      ];
+    } else if (Array.isArray(validSortField)) {
+      orderClause = [validSortField.concat(validSortOrder)];
+    } else {
+      orderClause = [[validSortField, validSortOrder]];
+    }
 
-      if (email) {
-        whereConditions.email = { [Op.iLike]: `%${email}%` };
-      }
+    // Execute query
+    const queryResult = await Member.findAndCountAll({
+      where: finalWhereCondition,
+      include: [{ 
+        model: Organization,
+        as: 'organization',
+        attributes: ['id', 'name', 'type']
+      }],
+      order: orderClause,
+      limit: pageLimit,
+      offset: offset,
+      distinct: true
+    });
 
-      if (landline) {
-        whereConditions.landline = { [Op.iLike]: `%${landline}%` };
-      }
+    const { count, rows: members } = queryResult;
 
-      if (mobile) {
-        whereConditions.mobile = { [Op.iLike]: `%${mobile}%` };
-      }
+    // Add calculated fields including status
+    let membersWithCalculatedStatus = members.map(member => {
+      const memberData = member.toJSON();
+      memberData.age = member.age;
+      return addCalculatedFields(memberData);
+    });
 
-      if (gender && ['male', 'female', 'diverse'].includes(gender)) {
-        whereConditions.gender = gender;
-      }
-
-      // Full-text search
-      let searchCondition = {};
-      if (search && search.trim() !== '') {
-        searchCondition = {
-          [Op.or]: [
-            { firstName: { [Op.iLike]: `%${search}%` } },
-            { lastName: { [Op.iLike]: `%${search}%` } },
-            { email: { [Op.iLike]: `%${search}%` } },
-            { memberNumber: { [Op.iLike]: `%${search}%` } },
-            { landline: { [Op.iLike]: `%${search}%` } },
-            { mobile: { [Op.iLike]: `%${search}%` } },
-            { title: { [Op.iLike]: `%${search}%` } }
-          ]
-        };
-      }
-
-      const finalWhereCondition = {
-        ...whereConditions,
-        ...searchCondition
-      };
-
-      // Validate and build sort order - 'status' aus validSortFields entfernt
-      const validSortFields = ['firstName', 'lastName', 'email', 'memberNumber', 'created_at', 'joinedAt', 'birthDate'];
-      const validSortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
-      const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
-
-      let orderClause;
-      if (sortBy === 'name') {
-        orderClause = [
-          ['firstName', validSortOrder],
-          ['lastName', validSortOrder]
-        ];
-      } else {
-        orderClause = [[validSortField, validSortOrder]];
-      }
-
-      // Execute query
-      const queryResult = await Member.findAndCountAll({
-        where: finalWhereCondition,
-        include: [{ 
-          model: Organization,
-          as: 'organization',
-          attributes: ['id', 'name', 'type']
-        }],
-        order: orderClause,
-        limit: pageLimit,
-        offset: offset,
-        distinct: true
-      });
-
-      const { count, rows: members } = queryResult;
-
-      // Add calculated fields including status
-      const membersWithCalculatedStatus = members.map(member => {
-        const memberData = member.toJSON();
-        memberData.age = member.age;
-        return addCalculatedFields(memberData);
-      });
-
-      const totalPages = Math.ceil(count / pageLimit);
-      const hasNextPage = parseInt(page) < totalPages;
+    // NEU: Filter nach calculatedStatus im Speicher, da dies ein berechnetes Feld ist
+    if (calculatedStatus) {
+      membersWithCalculatedStatus = membersWithCalculatedStatus.filter(member => 
+        member.calculatedStatus === calculatedStatus
+      );
+      
+      // Anzahl für Pagination anpassen
+      const filteredCount = membersWithCalculatedStatus.length;
+      const adjustedTotalPages = Math.ceil(filteredCount / pageLimit);
+      
+      // Pagination-Info mit gefilterten Daten
+      const hasNextPage = parseInt(page) < adjustedTotalPages;
       const hasPrevPage = parseInt(page) > 1;
 
-      console.log(`✅ Retrieved ${members.length} of ${count} members for org ${organization.id}`);
+      console.log(`✅ Retrieved ${membersWithCalculatedStatus.length} of ${filteredCount} members (filtered by calculatedStatus: ${calculatedStatus}) for org ${organization.id}`);
 
-      res.json({
+      return res.json({
         members: membersWithCalculatedStatus,
         pagination: {
           currentPage: parseInt(page),
-          totalPages,
-          totalItems: count,
+          totalPages: adjustedTotalPages,
+          totalItems: filteredCount,
           itemsPerPage: pageLimit,
           hasNextPage,
           hasPrevPage
         },
         filters: {
           search,
-          status,  // Wird im Frontend verarbeitet
+          status: membershipStatusFilter,
+          calculatedStatus,
+          membershipStatus: membershipStatusFilter,
           memberNumber,
           firstName,
           lastName,
@@ -363,24 +401,62 @@ function setupRoutes(models) {
           gender
         },
         sorting: {
-          sortBy: validSortField,
+          sortBy: sortBy,
           sortOrder: validSortOrder
         },
         organizationId: organization.id,
         timestamp: new Date().toISOString(),
         success: true
       });
-
-    } catch (error) {
-      console.error('❌ [GET_MEMBERS] Error:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch members',
-        details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-        timestamp: new Date().toISOString(),
-        success: false
-      });
     }
-  });
+
+    // Standard-Response ohne calculatedStatus-Filter
+    const totalPages = Math.ceil(count / pageLimit);
+    const hasNextPage = parseInt(page) < totalPages;
+    const hasPrevPage = parseInt(page) > 1;
+
+    console.log(`✅ Retrieved ${members.length} of ${count} members for org ${organization.id}`);
+
+    res.json({
+      members: membersWithCalculatedStatus,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalItems: count,
+        itemsPerPage: pageLimit,
+        hasNextPage,
+        hasPrevPage
+      },
+      filters: {
+        search,
+        status: membershipStatusFilter,
+        calculatedStatus,
+        membershipStatus: membershipStatusFilter,
+        memberNumber,
+        firstName,
+        lastName,
+        email,
+        landline,
+        mobile,
+        gender
+      },
+      sorting: {
+        sortBy: sortBy,
+        sortOrder: validSortOrder
+      },
+      organizationId: organization.id,
+      timestamp: new Date().toISOString(),
+      success: true
+    });
+
+  } catch (error) {
+    console.error('❌ [GET_MEMBERS] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch members',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
 
   // Member statistics - mit SQL-basierter Status-Berechnung
   router.get('/stats', async (req, res) => {

@@ -16,6 +16,7 @@ const MembersView = () => {
   const filterRefs = useRef({
     status: null,
     calculatedStatus: null,
+    membershipStatus: null,
     memberNumber: null,
     firstName: null,
     lastName: null,
@@ -49,6 +50,7 @@ const MembersView = () => {
   const [filters, setFilters] = useState({
     status: '',
     calculatedStatus: '',
+    membershipStatus: '',
     memberNumber: '',
     firstName: '',
     lastName: '',
@@ -69,6 +71,11 @@ const MembersView = () => {
   // Status Configuration from Organization
   const [statusConfig, setStatusConfig] = useState([]);
   
+  // Hilfsfunktion zur Überprüfung ob ein Element setSelectionRange unterstützt
+  const supportsSetSelectionRange = (element) => {
+    return element && typeof element.setSelectionRange === 'function';
+  };
+  
   // Load status configuration
   useEffect(() => {
     if (organization?.settings?.membershipConfig?.statuses) {
@@ -80,6 +87,7 @@ const MembersView = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      setPagination(prev => ({ ...prev, currentPage: 1 }));
     }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
@@ -92,54 +100,102 @@ const MembersView = () => {
     return () => clearTimeout(timer);
   }, [filters]);
 
-  // Fokus-Management
-  useEffect(() => {
-    if (currentFocusedField.current && currentCursorPosition.current !== null) {
-      const field = currentFocusedField.current;
-      const position = currentCursorPosition.current;
-      
-      if (field === 'search' && searchInputRef.current) {
-        searchInputRef.current.focus();
-        searchInputRef.current.setSelectionRange(position, position);
-      } else if (filterRefs.current[field]) {
-        filterRefs.current[field].focus();
-        filterRefs.current[field].setSelectionRange(position, position);
-      }
+  // Fokus-State speichern
+  const saveFocusState = () => {
+    const activeElement = document.activeElement;
+    
+    if (activeElement === searchInputRef.current) {
+      currentFocusedField.current = 'search';
+      currentCursorPosition.current = activeElement.selectionStart;
+    } else {
+      Object.entries(filterRefs.current).forEach(([field, ref]) => {
+        if (ref === activeElement) {
+          currentFocusedField.current = field;
+          // Nur für Elemente die setSelectionRange unterstützen
+          if (supportsSetSelectionRange(activeElement)) {
+            currentCursorPosition.current = activeElement.selectionStart;
+          } else {
+            currentCursorPosition.current = null;
+          }
+        }
+      });
     }
-  }, [members]);
+  };
+
+  // Fokus-State wiederherstellen
+  const restoreFocusState = () => {
+    setTimeout(() => {
+      if (currentFocusedField.current === 'search' && searchInputRef.current) {
+        searchInputRef.current.focus();
+        if (currentCursorPosition.current !== null && supportsSetSelectionRange(searchInputRef.current)) {
+          searchInputRef.current.setSelectionRange(
+            currentCursorPosition.current, 
+            currentCursorPosition.current
+          );
+        }
+      } else if (currentFocusedField.current && filterRefs.current[currentFocusedField.current]) {
+        const input = filterRefs.current[currentFocusedField.current];
+        input.focus();
+        // Nur setSelectionRange aufrufen wenn unterstützt
+        if (currentCursorPosition.current !== null && supportsSetSelectionRange(input)) {
+          input.setSelectionRange(
+            currentCursorPosition.current, 
+            currentCursorPosition.current
+          );
+        }
+      }
+      
+      currentFocusedField.current = null;
+      currentCursorPosition.current = null;
+    }, 50);
+  };
 
   // Data Loading
   useEffect(() => {
     fetchMembers();
-  }, [debouncedSearchTerm, debouncedFilters, sortConfig, pagination.currentPage]);
+  }, [debouncedSearchTerm, debouncedFilters, sortConfig, pagination.currentPage, pagination.itemsPerPage]);
 
   const fetchMembers = async () => {
     try {
+      saveFocusState();
       setLoading(true);
       setError(null);
       
       const params = new URLSearchParams({
-        page: pagination.currentPage,
-        limit: pagination.itemsPerPage,
+        page: pagination.currentPage.toString(),
+        limit: pagination.itemsPerPage.toString(),
         sortBy: sortConfig.key,
-        sortOrder: sortConfig.direction,
-        search: debouncedSearchTerm,
-        ...Object.fromEntries(
-          Object.entries(debouncedFilters).filter(([_, value]) => value !== '')
-        )
+        sortOrder: sortConfig.direction.toUpperCase(),
+        search: debouncedSearchTerm
       });
 
+      // Filter nur hinzufügen, wenn sie gesetzt sind
+      Object.entries(debouncedFilters).forEach(([key, value]) => {
+        if (value !== '') {
+          // Debug: Log each filter
+          console.log(`Adding filter: ${key} = ${value}`);
+          params.append(key, value);
+        }
+      });
+
+      console.log('Fetching members with params:', params.toString());
+      console.log('Full URL:', `${API_URL}/members?${params}`);
+      
       const response = await axios.get(`${API_URL}/members?${params}`);
+      
+      console.log('Response from backend:', response.data);
       
       if (response.data.members) {
         setMembers(response.data.members);
+        console.log('Number of members received:', response.data.members.length);
         setPagination(prev => ({
           ...prev,
-          totalPages: response.data.pagination.pages,
-          totalItems: response.data.pagination.total
+          totalPages: response.data.pagination.pages || 1,
+          totalItems: response.data.pagination.total || 0
         }));
       } else {
-        setMembers(response.data);
+        setMembers(Array.isArray(response.data) ? response.data : []);
+        console.log('Number of members received:', Array.isArray(response.data) ? response.data.length : 0);
       }
       
       setSelectAll(false);
@@ -149,6 +205,7 @@ const MembersView = () => {
       setError(t('common.loadError', 'Fehler beim Laden der Mitglieder'));
     } finally {
       setLoading(false);
+      restoreFocusState();
     }
   };
 
@@ -163,7 +220,13 @@ const MembersView = () => {
       const response = await axios.get(`${API_URL}/members/suggestions`, {
         params: { q: value, field }
       });
-      setSuggestions(prev => ({ ...prev, [field]: response.data.suggestions }));
+      
+      // Handle response structure
+      if (response.data.suggestions) {
+        setSuggestions(prev => ({ ...prev, [field]: response.data.suggestions }));
+      } else if (Array.isArray(response.data)) {
+        setSuggestions(prev => ({ ...prev, [field]: response.data }));
+      }
     } catch (error) {
       console.error('Error fetching suggestions:', error);
     }
@@ -178,14 +241,27 @@ const MembersView = () => {
   };
 
   const handleFilterChange = (field, value) => {
-    const input = field === 'search' ? searchInputRef.current : filterRefs.current[field];
-    if (input) {
-      currentFocusedField.current = field;
-      currentCursorPosition.current = input.selectionStart;
-    }
+    console.log(`Filter changed: ${field} = ${value}`);
     
-    setFilters(prev => ({ ...prev, [field]: value }));
-    fetchSuggestions(field, value);
+    setFilters(prev => {
+      const newFilters = { ...prev, [field]: value };
+      
+      // Spezielle Behandlung für Status-Filter
+      // Wenn membershipStatus gesetzt wird, auch status für Backend-Kompatibilität setzen
+      if (field === 'membershipStatus') {
+        newFilters.status = value;
+      }
+      
+      console.log('New filters:', newFilters);
+      return newFilters;
+    });
+    
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
+    
+    // Fetch suggestions for autocomplete fields
+    if (['firstName', 'lastName', 'email'].includes(field)) {
+      fetchSuggestions(field, value);
+    }
   };
 
   const handleSuggestionClick = (field, value) => {
@@ -209,7 +285,7 @@ const MembersView = () => {
     if (selectAll) {
       setSelectedRows([]);
     } else {
-      setSelectedRows(members.map(member => member.id));
+      setSelectedRows(members.map(member => member._id || member.id));
     }
     setSelectAll(!selectAll);
   };
@@ -233,7 +309,7 @@ const MembersView = () => {
     if (!memberToDelete) return;
 
     try {
-      await axios.delete(`${API_URL}/members/${memberToDelete.id}`);
+      await axios.delete(`${API_URL}/members/${memberToDelete._id || memberToDelete.id}`);
       fetchMembers();
       setShowDeleteConfirm(false);
       setMemberToDelete(null);
@@ -261,13 +337,50 @@ const MembersView = () => {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/members/export/csv`, {
+        responseType: 'blob',
+        params: {
+          ...filters,
+          search: searchTerm
+        }
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `members_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      setError('Fehler beim Exportieren der Daten');
+    }
+  };
+
   // 1. StatusBadge für den berechneten Status (Aktiv/Inaktiv)
   const StatusBadge = ({ member }) => {
     // Berechne den Status basierend auf den Daten
     const calculateStatus = () => {
+      // Debug: Log member data
+      console.log('Member status data:', {
+        id: member._id || member.id,
+        calculatedStatus: member.calculatedStatus,
+        status: member.status,
+        joinedAt: member.joinedAt,
+        leavingDate: member.membershipData?.leavingDate
+      });
+      
       // Verwende den vom Backend berechneten Status, falls vorhanden
       if (member.calculatedStatus) {
         return member.calculatedStatus;
+      }
+      
+      // Fallback auf member.status wenn vorhanden
+      if (member.status === 'active' || member.status === 'inactive') {
+        return member.status;
       }
       
       // Fallback: Berechne lokal
@@ -296,7 +409,7 @@ const MembersView = () => {
       }
     };
 
-    const statusConfig = config[status];
+    const statusConfig = config[status] || config.inactive;
 
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
@@ -312,11 +425,11 @@ const MembersView = () => {
     
     // Fallback für unbekannte Status
     if (!statusConfig) {
-      return (
+      return status ? (
         <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-          {status || 'Unbekannt'}
+          {status}
         </span>
-      );
+      ) : null;
     }
 
     const colorMap = {
@@ -419,15 +532,7 @@ const MembersView = () => {
               🔍 Filter
             </button>
             <button
-              onClick={() => {
-                const params = new URLSearchParams({
-                  search: debouncedSearchTerm,
-                  ...Object.fromEntries(
-                    Object.entries(debouncedFilters).filter(([_, value]) => value !== '')
-                  )
-                });
-                window.open(`${API_URL}/members/export/csv?${params}`, '_blank');
-              }}
+              onClick={handleExportCSV}
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
               title="Als CSV exportieren"
             >
@@ -476,7 +581,7 @@ const MembersView = () => {
 
           {/* Column Filters */}
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {/* Calculated Status Filter (Aktiv/Inaktiv) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -495,24 +600,26 @@ const MembersView = () => {
               </div>
 
               {/* Membership Status Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mitgliedsstatus
-                </label>
-                <select
-                  ref={el => filterRefs.current.status = el}
-                  value={filters.status}
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">{t('members.allStatuses', 'Alle Status')}</option>
-                  {statusConfig.map(status => (
-                    <option key={status.key} value={status.key}>
-                      {status.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {statusConfig.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Mitgliedsstatus
+                  </label>
+                  <select
+                    ref={el => filterRefs.current.membershipStatus = el}
+                    value={filters.membershipStatus}
+                    onChange={(e) => handleFilterChange('membershipStatus', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Alle</option>
+                    {statusConfig.map(status => (
+                      <option key={status.key} value={status.key}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Member Number Filter */}
               <div>
@@ -590,7 +697,7 @@ const MembersView = () => {
               </div>
 
               {/* Email Filter */}
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('common.email')}
                 </label>
@@ -599,9 +706,24 @@ const MembersView = () => {
                   type="text"
                   value={filters.email}
                   onChange={(e) => handleFilterChange('email', e.target.value)}
+                  onFocus={() => setShowSuggestions(prev => ({ ...prev, email: true }))}
+                  onBlur={() => setTimeout(() => setShowSuggestions(prev => ({ ...prev, email: false })), 200)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="E-Mail filtern"
                 />
+                {showSuggestions.email && suggestions.email?.length > 0 && (
+                  <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-48 overflow-auto">
+                    {suggestions.email.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSuggestionClick('email', suggestion)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Phone Filter */}
@@ -659,7 +781,7 @@ const MembersView = () => {
                 <SortableColumn column="calculatedStatus">
                   Status
                 </SortableColumn>
-                <SortableColumn column="status">
+                <SortableColumn column="membershipStatus">
                   Mitgliedsstatus
                 </SortableColumn>
                 <SortableColumn column="joinedAt">
@@ -681,12 +803,12 @@ const MembersView = () => {
                 </tr>
               ) : (
                 members.map((member) => (
-                  <tr key={member.id} className="hover:bg-gray-50">
+                  <tr key={member._id || member.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
-                        checked={selectedRows.includes(member.id)}
-                        onChange={() => toggleRowSelection(member.id)}
+                        checked={selectedRows.includes(member._id || member.id)}
+                        onChange={() => toggleRowSelection(member._id || member.id)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                     </td>
@@ -699,6 +821,9 @@ const MembersView = () => {
                           {member.salutation && `${member.salutation} `}
                           {member.firstName} {member.lastName}
                         </div>
+                        {member.company && (
+                          <div className="text-sm text-gray-500">{member.company}</div>
+                        )}
                         {member.title && (
                           <div className="text-sm text-gray-500">{member.title}</div>
                         )}
@@ -708,16 +833,18 @@ const MembersView = () => {
                       {member.email || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {member.mobile || member.landline || '-'}
+                      {member.mobile || member.phone || member.landline || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <StatusBadge member={member} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <MitgliedsstatusBadge 
-                        status={member.membershipData?.membershipStatus} 
-                        statuses={statusConfig}
-                      />
+                      {(member.membershipData?.membershipStatus || member.membershipStatus || member.status) && (
+                        <MitgliedsstatusBadge 
+                          status={member.membershipData?.membershipStatus || member.membershipStatus || member.status} 
+                          statuses={statusConfig}
+                        />
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {member.joinedAt 
