@@ -158,8 +158,8 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
             groups: membershipConfig.groups?.length || 0
           });
           
-          // Default status setzen
-          if (!formData.membershipData.membershipStatus && statuses.length > 0) {
+          // Default status setzen - NUR wenn kein Member geladen wird (neues Mitglied)
+          if (!isEditMode && !formData.membershipData.membershipStatus && statuses.length > 0) {
             const defaultStatus = statuses.find(s => s.default === true) || statuses[0];
             setFormData(prev => ({
               ...prev,
@@ -204,12 +204,19 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
   // Load member data in edit mode
   useEffect(() => {
   if (isEditMode && member) {
+        console.log('📊 Member data received:', {
+      member,
+      membershipData: member.membershipData,
+      storedStatus: member.membershipData?.membershipStatus,
+      oldStatus: member.status
+    });
+
     const membershipData = member.membershipData || {};
     
     // ✅ WICHTIG: Erstelle das membershipData Objekt mit dem korrekten Status aus member.status
     const formattedMembershipData = {
       joinDate: membershipData.joinDate || member.joinedAt || new Date().toISOString().split('T')[0],
-      membershipStatus: member.status || '', // ✅ Verwende member.status für den konfigurierbaren Status
+      membershipStatus: membershipData.membershipStatus || '', // ✅ Verwende member.status für den konfigurierbaren Status
       joiningSource: membershipData.joiningSource || '',
       leavingReason: membershipData.leavingReason || '',
       leavingDate: membershipData.leavingDate || '',
@@ -223,6 +230,9 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
       },
       customFields: membershipData.customFields || {}
     };
+    
+    // DEBUG: Ausgabe der formatierten Daten
+    console.log('📊 Formatted membershipData:', formattedMembershipData);
 
     setFormData({
       salutation: member.salutation || '',
@@ -256,9 +266,11 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
 
 
   // Reset form when modal opens/closes
-  useEffect(() => {
-    if (!isOpen) {
-      setTimeout(() => {
+useEffect(() => {
+  if (!isOpen) {
+    setTimeout(() => {
+      // Nur beim Schließen zurücksetzen
+      if (!isEditMode) {
         const defaultStatus = memberStatuses.find(s => s.isDefault) || memberStatuses[0];
         setFormData({
           salutation: '',
@@ -297,14 +309,15 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
             customFields: {}
           }
         });
-        setError(null);
-        setFieldErrors({});
-        handleIbanChange('');
-        setActiveTab('personal');
-        setDefaultCurrency('EUR');
-      }, 300);
-    }
-  }, [isOpen, memberStatuses]);
+      } // Diese schließende Klammer war wichtig
+      setError(null);
+      setFieldErrors({});
+      handleIbanChange('');
+      setActiveTab('personal');
+      setDefaultCurrency('EUR');
+    }, 300);
+  }
+}, [isOpen, memberStatuses, isEditMode]); // isEditMode zu den Dependencies hinzugefügt
 
   // ✅ Custom Fields Handlers
   const updateCustomFieldValue = (tabKey, fieldKey, value) => {

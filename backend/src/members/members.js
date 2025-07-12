@@ -537,7 +537,7 @@ function setupRoutes(models) {
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
         membershipData,
-        status // ✅ NEU: Status aus dem Request-Body extrahieren
+       // status // SMS ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
       if (!firstName || !lastName) {
@@ -633,7 +633,7 @@ function setupRoutes(models) {
         mobile,
         website,
         address,
-        status, // ✅ NEU: Status beim Erstellen setzen
+       // status, // SMS ✅ NEU: Status beim Erstellen setzen
         memberNumber: generatedMemberNumber,
         passwordHash: 'temp_password',
         organizationId: organization.id,
@@ -691,7 +691,7 @@ function setupRoutes(models) {
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
         membershipData,
-        status // ✅ NEU: Status aus dem Request-Body extrahieren
+       // status // SMS ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
       const organization = await Organization.findOne();
@@ -765,7 +765,7 @@ function setupRoutes(models) {
         website,
         address,
         memberNumber,
-        status, // ✅ NEU: Status in die updateFields aufnehmen
+        //status, // SMS ✅ NEU: Status in die updateFields aufnehmen
         membershipData: validatedMembershipData
       };
 
