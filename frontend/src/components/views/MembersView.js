@@ -1,4 +1,4 @@
-// frontend/src/components/views/MembersView.js - VOLLSTÄNDIG MIT ALLEN FUNKTIONEN
+// frontend/src/components/views/MembersView.js - VOLLSTÄNDIG MIT BEIDEN STATUS-SPALTEN
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { OrganizationContext } from '../../contexts/OrganizationContext';
 import axios from 'axios';
@@ -15,6 +15,7 @@ const MembersView = () => {
   const searchInputRef = useRef(null);
   const filterRefs = useRef({
     status: null,
+    calculatedStatus: null,
     memberNumber: null,
     firstName: null,
     lastName: null,
@@ -47,6 +48,7 @@ const MembersView = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
   const [filters, setFilters] = useState({
     status: '',
+    calculatedStatus: '',
     memberNumber: '',
     firstName: '',
     lastName: '',
@@ -259,45 +261,80 @@ const MembersView = () => {
     }
   };
 
-  // ✅ KORRIGIERTE Status Badge Component mit Konfiguration
-  const StatusBadge = ({ status }) => {
-    // Status-Konfiguration aus Organization Settings
-    const configuredStatus = statusConfig.find(s => s.key === status);
+  // 1. StatusBadge für den berechneten Status (Aktiv/Inaktiv)
+  const StatusBadge = ({ member }) => {
+    // Berechne den Status basierend auf den Daten
+    const calculateStatus = () => {
+      // Verwende den vom Backend berechneten Status, falls vorhanden
+      if (member.calculatedStatus) {
+        return member.calculatedStatus;
+      }
+      
+      // Fallback: Berechne lokal
+      if (!member.joinedAt) return 'inactive';
+      if (!member.membershipData?.leavingDate) return 'active';
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const leaving = new Date(member.membershipData.leavingDate);
+      leaving.setHours(0, 0, 0, 0);
+      
+      return leaving >= today ? 'active' : 'inactive';
+    };
+
+    const status = calculateStatus();
+    const config = {
+      active: { 
+        bg: 'bg-green-100', 
+        text: 'text-green-800', 
+        label: 'Aktiv' 
+      },
+      inactive: { 
+        bg: 'bg-gray-100', 
+        text: 'text-gray-800', 
+        label: 'Inaktiv' 
+      }
+    };
+
+    const statusConfig = config[status];
+
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
+        {statusConfig.label}
+      </span>
+    );
+  };
+
+  // 2. MitgliedsstatusBadge für den Konfigurations-Status
+  const MitgliedsstatusBadge = ({ status, statuses }) => {
+    // Hole die Status-Konfiguration aus den Organization-Einstellungen
+    const statusConfig = statuses?.find(s => s.key === status);
     
     // Fallback für unbekannte Status
-    if (!configuredStatus) {
+    if (!statusConfig) {
       return (
         <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-          {status}
+          {status || 'Unbekannt'}
         </span>
       );
     }
-    
-    // Farb-Mapping für Tailwind CSS Klassen
+
     const colorMap = {
       green: { bg: 'bg-green-100', text: 'text-green-800' },
-      gray: { bg: 'bg-gray-100', text: 'text-gray-800' },
+      yellow: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
       red: { bg: 'bg-red-100', text: 'text-red-800' },
       blue: { bg: 'bg-blue-100', text: 'text-blue-800' },
-      yellow: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      gray: { bg: 'bg-gray-100', text: 'text-gray-800' },
       purple: { bg: 'bg-purple-100', text: 'text-purple-800' },
       pink: { bg: 'bg-pink-100', text: 'text-pink-800' },
-      indigo: { bg: 'bg-indigo-100', text: 'text-indigo-800' },
-      orange: { bg: 'bg-orange-100', text: 'text-orange-800' },
-      teal: { bg: 'bg-teal-100', text: 'text-teal-800' },
-      cyan: { bg: 'bg-cyan-100', text: 'text-cyan-800' }
+      indigo: { bg: 'bg-indigo-100', text: 'text-indigo-800' }
     };
-    
-    const colors = colorMap[configuredStatus.color] || colorMap.gray;
-    
+
+    const colors = colorMap[statusConfig.color] || colorMap.gray;
+
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
-        {configuredStatus.label}
-        {configuredStatus.billing?.active && (
-          <span className="ml-1 text-xs">
-            ({configuredStatus.billing.fee} {organization?.settings?.membershipConfig?.defaultCurrency || 'EUR'})
-          </span>
-        )}
+        {statusConfig.label}
       </span>
     );
   };
@@ -440,10 +477,27 @@ const MembersView = () => {
           {/* Column Filters */}
           {showFilters && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Status Filter */}
+              {/* Calculated Status Filter (Aktiv/Inaktiv) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('common.status')}
+                  Status
+                </label>
+                <select
+                  ref={el => filterRefs.current.calculatedStatus = el}
+                  value={filters.calculatedStatus}
+                  onChange={(e) => handleFilterChange('calculatedStatus', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Alle</option>
+                  <option value="active">Aktiv</option>
+                  <option value="inactive">Inaktiv</option>
+                </select>
+              </div>
+
+              {/* Membership Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mitgliedsstatus
                 </label>
                 <select
                   ref={el => filterRefs.current.status = el}
@@ -602,8 +656,11 @@ const MembersView = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {t('common.phone')}
                 </th>
+                <SortableColumn column="calculatedStatus">
+                  Status
+                </SortableColumn>
                 <SortableColumn column="status">
-                  {t('common.status')}
+                  Mitgliedsstatus
                 </SortableColumn>
                 <SortableColumn column="joinedAt">
                   {t('members.memberSince')}
@@ -616,7 +673,7 @@ const MembersView = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {members.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
                     {debouncedSearchTerm || Object.values(debouncedFilters).some(v => v) 
                       ? t('members.noResults', 'Keine Ergebnisse gefunden')
                       : t('members.empty', 'Noch keine Mitglieder vorhanden')}
@@ -654,7 +711,13 @@ const MembersView = () => {
                       {member.mobile || member.landline || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <StatusBadge status={member.status} />
+                      <StatusBadge member={member} />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <MitgliedsstatusBadge 
+                        status={member.status} 
+                        statuses={statusConfig}
+                      />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {member.joinedAt 
