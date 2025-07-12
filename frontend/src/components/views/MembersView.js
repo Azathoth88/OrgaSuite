@@ -603,7 +603,7 @@ const MembersView = () => {
               {statusConfig.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Mitgliedsstatus
+                    {t('members.membershipStatus', 'Mitgliedsstatus')}
                   </label>
                   <select
                     ref={el => filterRefs.current.membershipStatus = el}
@@ -782,7 +782,7 @@ const MembersView = () => {
                   Status
                 </SortableColumn>
                 <SortableColumn column="membershipStatus">
-                  Mitgliedsstatus
+                  {t('members.membershipStatus', 'Mitgliedsstatus')}
                 </SortableColumn>
                 <SortableColumn column="joinedAt">
                   {t('members.memberSince')}
