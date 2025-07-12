@@ -203,66 +203,57 @@ const MemberFormModal = ({ isOpen, onClose, member = null, onSuccess }) => {
 
   // Load member data in edit mode
   useEffect(() => {
-    if (isEditMode && member) {
-      const membershipData = member.membershipData || {
-        joinDate: member.joinedAt || new Date().toISOString().split('T')[0],
-        membershipStatus: member.status || '',
-        joiningSource: member.membershipData?.joiningSource || '',
-        leavingReason: member.membershipData?.leavingReason || '',
-        leavingDate: member.membershipData?.leavingDate || '',
-        paymentMethod: 'Überweisung',
-        bankDetails: {
-          accountHolder: '',
-          iban: '',
-          bic: '',
-          bankName: '',
-          sepaActive: false
-        },
-        customFields: {}
-      };
+  if (isEditMode && member) {
+    const membershipData = member.membershipData || {};
+    
+    // ✅ WICHTIG: Erstelle das membershipData Objekt mit dem korrekten Status aus member.status
+    const formattedMembershipData = {
+      joinDate: membershipData.joinDate || member.joinedAt || new Date().toISOString().split('T')[0],
+      membershipStatus: member.status || '', // ✅ Verwende member.status für den konfigurierbaren Status
+      joiningSource: membershipData.joiningSource || '',
+      leavingReason: membershipData.leavingReason || '',
+      leavingDate: membershipData.leavingDate || '',
+      paymentMethod: membershipData.paymentMethod || 'Überweisung',
+      bankDetails: membershipData.bankDetails || {
+        accountHolder: '',
+        iban: '',
+        bic: '',
+        bankName: '',
+        sepaActive: false
+      },
+      customFields: membershipData.customFields || {}
+    };
 
-      if (!membershipData.bankDetails) {
-        membershipData.bankDetails = {
-          accountHolder: '',
-          iban: '',
-          bic: '',
-          bankName: '',
-          sepaActive: false
-        };
-      }
-
-      if (!membershipData.customFields) {
-        membershipData.customFields = {};
-      }
-
-      setFormData({
-        salutation: member.salutation || '',
-        title: member.title || '',
-        firstName: member.firstName || '',
-        lastName: member.lastName || '',
-        gender: member.gender || '',
-        birthDate: member.birthDate || '',
-        email: member.email || '',
-        landline: member.landline || '',
-        mobile: member.mobile || '',
-        website: member.website || '',
-        status: member.status || 'active',
-        memberNumber: member.memberNumber || '',
-        address: member.address || {
-          street: '',
-          city: '',
-          zip: '',
-          country: 'Deutschland'
-        },
-        groups: member.groups || [], // ✅ NEU: Gruppen laden
-        membershipData: membershipData
-      });
-      
-      if (membershipData.bankDetails?.iban) {
-        handleIbanChange(membershipData.bankDetails.iban);
-      }
+    setFormData({
+      salutation: member.salutation || '',
+      title: member.title || '',
+      firstName: member.firstName || '',
+      lastName: member.lastName || '',
+      gender: member.gender || '',
+      birthDate: member.birthDate || '',
+      email: member.email || '',
+      landline: member.landline || '',
+      mobile: member.mobile || '',
+      website: member.website || '',
+      status: member.status || 'active', // Dies wird nicht mehr verwendet, aber für Kompatibilität belassen
+      memberNumber: member.memberNumber || '',
+      address: member.address || {
+        street: '',
+        city: '',
+        zip: '',
+        country: 'Deutschland'
+      },
+      groups: member.groups || [],
+      membershipData: formattedMembershipData
+    });
+    
+    // IBAN Handler aufrufen, falls vorhanden
+    if (formattedMembershipData.bankDetails?.iban) {
+      handleIbanChange(formattedMembershipData.bankDetails.iban);
     }
-  }, [member, isEditMode]);
+  }
+}, [member, isEditMode]);
+
 
   // Reset form when modal opens/closes
   useEffect(() => {

@@ -530,13 +530,14 @@ function setupRoutes(models) {
     }
   });
 
-  // Create new member
+  // Create new member - KORRIGIERTE VERSION MIT STATUS
   router.post('/', async (req, res) => {
     try {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        membershipData 
+        membershipData,
+        status // ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
       if (!firstName || !lastName) {
@@ -632,6 +633,7 @@ function setupRoutes(models) {
         mobile,
         website,
         address,
+        status, // ✅ NEU: Status beim Erstellen setzen
         memberNumber: generatedMemberNumber,
         passwordHash: 'temp_password',
         organizationId: organization.id,
@@ -682,13 +684,14 @@ function setupRoutes(models) {
     }
   });
 
-  // Update member
+  // Update member - KORRIGIERTE VERSION MIT STATUS
   router.put('/:id', async (req, res) => {
     try {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        membershipData 
+        membershipData,
+        status // ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
       const organization = await Organization.findOne();
@@ -762,6 +765,7 @@ function setupRoutes(models) {
         website,
         address,
         memberNumber,
+        status, // ✅ NEU: Status in die updateFields aufnehmen
         membershipData: validatedMembershipData
       };
 
