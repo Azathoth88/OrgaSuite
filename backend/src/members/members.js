@@ -100,6 +100,14 @@ function defineMemberModel(sequelize) {
       defaultValue: {},
       field: 'membership_data'
     },
+    
+    // Gruppen-Zuordnung hinzufügen
+    groups: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Zugeordnete Gruppen'
+    },
+
     // Sonstige Felder
     passwordHash: {
       type: DataTypes.STRING,
@@ -536,7 +544,7 @@ function setupRoutes(models) {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        membershipData,
+        membershipData, groups 
        // status // SMS ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
@@ -633,6 +641,7 @@ function setupRoutes(models) {
         mobile,
         website,
         address,
+        groups: groups || [],
        // status, // SMS ✅ NEU: Status beim Erstellen setzen
         memberNumber: generatedMemberNumber,
         passwordHash: 'temp_password',
@@ -690,7 +699,7 @@ function setupRoutes(models) {
       const { 
         salutation, title, firstName, lastName, gender, birthDate,
         email, landline, mobile, website, address, memberNumber, 
-        membershipData,
+        membershipData, groups
        // status // SMS ✅ NEU: Status aus dem Request-Body extrahieren
       } = req.body;
       
@@ -765,6 +774,7 @@ function setupRoutes(models) {
         website,
         address,
         memberNumber,
+        groups: groups || [],
         //status, // SMS ✅ NEU: Status in die updateFields aufnehmen
         membershipData: validatedMembershipData
       };
